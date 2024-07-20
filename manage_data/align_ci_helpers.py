@@ -7,11 +7,13 @@ import numpy as np
 
 import math
 
-def bil(filepath):
+def input_func(filepath):
     return gdal.Open(filepath)
 
-def tif(filepath):
-    return gdal.Open(filepath)
+def munger(switchvar):
+    if switchvar[1] is None:
+        return switchvar[0]
+    return switchvar[1]
 
 def slice_batch(batch_params):
     band_list, layer_arr, resample_params = batch_params

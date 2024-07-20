@@ -1,111 +1,134 @@
 ### create_pyramid_set.py
+
+### DO IMPORTS
+### name == main necessary for multiprocessing
 if __name__ == "__main__":
-    import time
-    starttime = time.process_time()
-    from osgeo import gdal
-    import numpy as np
-    import h5py
-    import os
+    print ("importing...")
     import sys
-    import math
-    import raster_helpers
-    import create_pyramid_functions as cpf
+    sys.path.append("..")
+    import os
+    import time
+    import numpy as np
+    from osgeo import gdal
     gdal.UseExceptions()
+    #import raster_helpers ### TODO -- what is this
+    import create_pyramid_functions as cpf
+    from utils import utils
+    starttime = time.process_time()
 
-    print("- loaded packages")
+    ### DEAL WITH PARAMETERS FROM CONFIG FILE...
+    config_dir = "configs/"
+    config_prefix = "mldata_"
+    config_name = "default_config"
+    if len(sys.argv) > 2 and sys.argv[2][:6] == "config":
+        config_name = sys.argv[2][7:]
+    config_loc = config_dir + config_prefix + config_name + ".json"
+    ### load config
+    config = utils.read_config(config_loc)
+    ### distribute config values to parameters...
+    print("loaded config file")
 
-    ### Start from scratch or load from checkpoint
-    load_checkpoint = False
+    ### CORE PARAMETERS
+    ### whether to run in pyramid, cube, or adjusted cube mode
+    data_mode = config["core"]["mode"]
+    ### default name for this run
+    run_name_suffix = config["core"]["run_name_suffix_default"]
+    ### fold name prefix
+    run_name_prefix = config["core"]["run_name_prefix"]
+    ### combine to create run name and path
+    run_name = data_mode + run_name_suffix
+    fold_name = run_name_prefix + run_name
+
+    ### PROCESS PARAMETERS
+    ### data dimension override -- create sample cubes/pyramids at this total resolution ### TODO
+    dimension_override = config["params"]["dimension_override"]
+    ### reduce cube sampling resolution to this fraction of total pyramid parameters when in adjusted cube mode
+    cube_reduce_dim_factor = config["params"]["cube_reduce_dim_factor"]
+    ### whether to work from checkpoints
+    load_checkpoint = config["params"]["load_checkpoint"]
+    ### data target projection --- just prints warnings if this doesn't match ### TODO
+    data_target_proj = config["params"]["data_target_proj"]
+    ### split method for geographic train/val/test partitioning
+    split_method = config["params"]["split_method"]
+    ### buffer distance for blocks split method
+    split_blocks_buffer = config["params"]["split_blocks_buffer"]
+    ### number of regions for blocks split method
+    split_blocks_regions = config["params"]["split_blocks_regions"]
+    ### outer buffer for split method
+    split_outer_buffer = config["params"]["split_outer_buffer"]
+    ### number of cross-validation splits
+    partition_n_splits = config["params"]["partition_n_splits"]
+    ### ratio to be set aside for testing and validation in partition
+    partition = (config["params"]["partition_test_ratio"], config["params"]["partition_val_ratio"])
+    ### exclude ### TODO
+    exclude = config["params"]["exclude"]
+    ### buffer fill
+    buffer_fill = config["params"]["buffer_fill"]
+    ### random seed
+    np_random_seed = config["params"]["np_random_seed"]
+    ### h5 chunk size -- number of samples to work on at once
+    h5_chunk_size = config["params"]["h5_chunk_size"]
+    ### whether to parallelize sample extraction with multiprocessing
+    parallelize = config["params"]["parallelize"]
+
+    ### retrieve data information from config file
+    data_info = config["data"]["data_info"]
+    ### subset data info for testing
+    test_subset = config["data"]["test_subset"]
+    if len(test_subset) > 0:
+        data_info = [data_info[ii] for ii in test_subset]
+
+    ### ALIGNMENT PARAM
+    ### base layer -- layer to align around
+    y_base = config["params"]["base_layer"] % len(data_info)
+
 
     ### USER PARAMETERS
     ### Required CRS: EPSG 4326 WSG 84
-    data_input_crs = "EPSG4326WSG84"
+    data_input_crs = "EPSG4326WSG84" ### TODO
 
-    ### location, base resolution, sample resolution, x/y, idx
-    """ data_info = [["../data/raster/srtm_clipped_co.tif",                 30,     30,     "x", 0,     "srtm"],
-                 ["../data/raster/nlcd_clipped_co_reproj.tif",          30,     30,     "x", 8,     "nlcd2019"],
-                 ["../data/raster/aspect_clipped_co.tif",               30,     30,     "x", 10,    "aspect"],
-                 ["../data/raster/slope_clipped_co.tif", 30, 30, "x", 11, "slope"],
-                 ["../data/raster/treeage_clipped_co_reproj.tif", 1000, 1000, "x", 12, "treeage"],
-                 ["../data/raster/ecostresswue_clipped_co.tif",         70,     70,     "y", 19,    "ecostresswue"],
-                 ["../data/raster/ecostressesi_clipped_co.tif",         70,     70,     "y", 20,    "ecostressesi"],
-                 ["../data/raster/gedi_agforestbiomass_clipped_co.tif", 1000,   1000,   "y", 21,    "gediagb"]]"""
-    data_info = [["../data/pyramid_raster_2/temp_reproj/SRTM_mean.tif",                 30,     30,     "x", 0,     "srtm"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVC_01_mean.tif",      30,     30,     "x", 1,     "evc2001"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVH_01_mean.tif",      30,     30,     "x", 2,     "evh2001"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVT_01_mode.tif",      30,     30,     "x", 3,     "evt2001"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVC_14_mean.tif",      30,     30,     "x", 4,     "evc2014"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVH_14_mean.tif",      30,     30,     "x", 5,     "evh2014"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVT_14_mode.tif",      30,     30,     "x", 6,     "evt2014"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVC_16_mean.tif",      30,     30,     "x", 7,     "evc2016"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVH_16_mean.tif",      30,     30,     "x", 8,     "evh2016"],
-                 ["../data/pyramid_raster_2/temp_reproj/LANDFIRE_EVT_16_mode.tif",      30,     30,     "x", 9,     "evt2016"],
-                 ["../data/pyramid_raster_2/temp_reproj/ASPECT_mean.tif",               30,     30,     "x", 10,    "aspect"],
-                 ["../data/pyramid_raster_2/temp_reproj/SLOPE_mean.tif",                30,     30,     "x", 11,    "slope"],
-                 ["../data/pyramid_raster_2/temp_reproj/STAND_AGE_mean.tif",            1000,   1000,   "x", 12,    "treeage"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_PRECIP_30_mean.tif",      800,    800,    "x", 13,    "precip"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_TEMPMIN_30_mean.tif",     800,    800,    "x", 14,    "tempmin"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_TEMPMEAN_30_mean.tif",    800,    800,    "x", 15,    "tempmean"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_TEMPMAX_30_mean.tif",     800,    800,    "x", 16,    "tempmax"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_VAPORMIN_30_mean.tif",    800,    800,    "x", 17,    "vapormin"],
-                 ["../data/pyramid_raster_2/temp_reproj/PRISM_VAPORMAX_30_mean.tif",    800,    800,    "x", 18,    "vapormax"],
-                 ["../data/raster/ecostresswue_clipped_co.tif",                         70,     70,     "y", 19,    "ecostresswue"],
-                 ["../data/raster/ecostressesi_clipped_co.tif",                         70,     70,     "y", 20,    "ecostressesi"],
-                 ["../data/raster/gedi_agforestbiomass_clipped_co.tif",                 1000,   1000,   "y", 21,    "gediagb"]]
-
-    ### split method and parameters
-    y_base = len(data_info) - 1
-    # how to divide geographic areas for train/val/test split
-    split_method = "blocks" # in {blocks, fullrand}
-    split_blocks_buffer = 10
-    split_blocks_nregions = 100
-    split_outer_buffer = 2
-
-    ### partition parameters
-    n_splits = 3
-    partition = (0.3, 0.2)
-
-    ### input data parameters
-    exclude = []
-    run_name = "pyramid_lf"
-    fold_name = "../data/pyramid_sets/" + run_name
-
-    print('- creating fold "' + run_name +'"')
-
-    ### data processing parameters
-    buffer_fill = -999
-    np_random_seed = 100807
-    h5_chunk_size = 1000
-    parallelize = True
-    reduce_to_total_dims = False
-    np.random.seed(np_random_seed)
-    print("- set random seed to", np_random_seed)
+    print('creating fold "' + run_name +'"')
+    print('- aligning with respect to layer', y_base, data_info[y_base]["name"])
+    print("- setting random seed to", np_random_seed)
 
     ### auto params
+    np.random.seed(np_random_seed)
     layer_locs = []
-    cube_res = []
+    base_res = []
     sample_to_res = []
     y_layers = []
     x_layers = []
     layer_names = []
-    layer_nodata = []
-    layer_size = []
-    layer_crs = []
-    layer_proj = []
-    layer_data = []
+    layer_type = []
+
+    min_x = dimension_override
+    ### extract some information about data...
     for i in range(len(data_info)):
         if i not in exclude:
-            layer_locs.append(data_info[i][0])
-            cube_res.append(data_info[i][1])
-            sample_to_res.append(data_info[i][2])
-            if data_info[i][3] == "x":
+            layer_locs.append(data_info[i]["loc"])
+            base_res.append(data_info[i]["base_res"])
+            sample_to_res.append(data_info[i]["base_res"])
+            layer_names.append(data_info[i]["name"])
+            layer_type.append(data_info[i]["type"])
+            if data_info[i]["xy"] == "x":
                 x_layers.append(i)
+                if base_res[-1] < min_x:
+                    min_x = base_res[-1]
             else:
                 y_layers.append(i)
 
+    ### either use override pyramid/cube size or base off y_base
+    ### use dimension_override from now on
+    if dimension_override == -1:
+        dimension_override = base_res[y_base]
+
+    ### set sampling resolution to min meter dimension (max resolution)
+    if data_mode == "cube":
+        for idx in x_layers:
+            sample_to_res[idx] = min_x
+
     checkpoint_prev = -1
     if load_checkpoint:
-        ###
         try:
             checkpoint_prev = cpf.get_checkpoint(fold_name)
             print("- previous checkpoint found:", checkpoint_prev)
@@ -118,6 +141,12 @@ if __name__ == "__main__":
         os.system("mkdir " + fold_name)
         cpf.set_checkpoint(fold_name, checkpoint_number=0)
         print("- created base directory")
+
+    layer_nodata = []
+    layer_size = []
+    layer_crs = []
+    layer_proj = []
+    layer_data = []
 
     ### LOAD DATA
     ### need to do regardless of checkpoint
@@ -137,70 +166,70 @@ if __name__ == "__main__":
         del layer_raster
 
     print("- loaded raster data")
-
     print("- ndvals:", layer_nodata)
+
     ### ORCHESTRATE
 
     ### compute expected cube size (expected size of each layer in pyramid)
     ### need to compute regardless of checkpoint
-    expected_cube_size = cpf.compute_expected_cube_sizes(cube_res[y_base], cube_res)
-    expected_sample_to = cpf.compute_expected_cube_sizes(cube_res[y_base], sample_to_res)
-    if reduce_to_total_dims:
-        expected_sample_to = cpf.reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers)
+    expected_cube_size = cpf.compute_expected_cube_sizes(dimension_override, base_res)
+    expected_sample_to = cpf.compute_expected_cube_sizes(dimension_override, sample_to_res)
+    ### adjust sampling resolution of cube to approximately some factor of pyramid resolution?
+    if data_mode == "adjust":
+        expected_sample_to = cpf.reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers, cube_reduce_dim_factor)
     ### save info file
-    cpf.save_info_file(data_info, expected_sample_to, fold_name, n_splits, buffer_fill, data_input_crs, np_random_seed)
+    cpf.save_info_file(data_info, expected_sample_to, fold_name, partition_n_splits, buffer_fill, data_input_crs, np_random_seed)
     ### make a buffer around data layers to avoid going out of bounds... involves resizing data
-    buffer_dist, layer_data = cpf.make_buffer(buffer_fill, layer_data, cube_res, y_base)
+    buffer_dist, layer_data = cpf.make_buffer(buffer_fill, layer_data, base_res, y_base)
     ### compute sampling offsets for dealing with odd and even sizes in sample generation
     center_offset, half_offset = cpf.compute_offsets(expected_cube_size, layer_data)
 
     ### roundup 1: compile list of legal samples
+    ### this means samples within the AOI, in particular where we have data for every layer
     ### checkpoint 1
     if checkpoint_prev <= 1:
         cpf.set_checkpoint(fold_name, checkpoint_number=1)
         legal_sample_idx_list, guide_shape = cpf.compile_legal_samples(expected_cube_size, layer_data, y_base,
-                                                                       cube_res, buffer_fill, layer_crs,
-                                                                       layer_nodata, buffer_dist, half_offset,
-                                                                       center_offset)
+                                                                       base_res, dimension_override,buffer_fill,
+                                                                       layer_crs, layer_nodata, buffer_dist,
+                                                                       half_offset, center_offset, parallelize)
         ### save legal sample index list
         cpf.save_legal_sample_ids(legal_sample_idx_list, fold_name)
     ### if already computed, load...
     else:
         legal_sample_idx_list = cpf.load_legal_sample_ids(fold_name)
-        guide_shape = layer_data[y_base].shape
+        guide_shape = (int(layer_data[y_base].shape[0] * (base_res[y_base] / dimension_override)),
+                       int(layer_data[y_base].shape[1] * (base_res[y_base] / dimension_override)))
 
     ### now do train/test/val splits
     ### checkpoint 2
     if checkpoint_prev <= 2:
         cpf.set_checkpoint(fold_name, checkpoint_number=2)
+        ### index of indices to make these easier to work with for partitioning
         meta_indices = np.arange(len(legal_sample_idx_list))
         if split_method == "blocks":
-            test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.block_split(legal_sample_idx_list, partition, split_blocks_nregions, guide_shape, split_blocks_buffer, fold_name, layer_proj, y_base, n_splits, split_outer_buffer)
+            test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.block_split(legal_sample_idx_list, partition, split_blocks_regions, guide_shape, split_blocks_buffer, fold_name, layer_proj, y_base, partition_n_splits, split_outer_buffer)
         elif split_method == "fullrandom":
-            test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.fullrand_split(legal_sample_idx_list, partition, n_splits, fold_name)
+            test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.fullrand_split(legal_sample_idx_list, partition, partition_n_splits, fold_name)
     else:
         ### load indices
-        test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.load_splits(fold_name, n_splits)
+        test_indices, remaining_indices, train_fold_indices, val_fold_indices = cpf.load_splits(fold_name, partition_n_splits)
 
     ### parallelize pyramid setup
     ### checkpoint 3
     sampletime = time.process_time()
     if checkpoint_prev <= 3:
         cpf.set_checkpoint(fold_name, checkpoint_number=3)
-        if parallelize:
-            cpf.make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size,
-                               legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, n_splits,
-                               layer_data, train_fold_indices, expected_sample_to, buffer_dist, half_offset,
-                               center_offset)
-        else:
-            cpf.pyramid_nonparallel(fold_name, h5_chunk_size, expected_cube_size, n_splits, layer_data, meta_indices,
-                                    cube_res, legal_sample_idx_list, layer_crs, y_base, test_indices,
-                                    train_fold_indices, buffer_fill, sample_to_res, buffer_dist, half_offset,
-                                    center_offset)
+        ### extract samples in parallel, or now also in series...
+        cpf.make_pyramids_main(base_res, fold_name, h5_chunk_size, expected_cube_size, dimension_override,
+                           legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, partition_n_splits,
+                           layer_data, train_fold_indices, expected_sample_to, buffer_dist, half_offset,
+                           center_offset, parallelize)
     else:
         print("- all done without reaching checkpoint")
 
     ### checkpoint 4
+    ### save all
     cpf.set_checkpoint(fold_name, checkpoint_number=4)
     endtime = time.process_time()
     print("sampling time:", endtime - sampletime)

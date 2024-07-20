@@ -2,7 +2,6 @@ from osgeo import gdal
 import numpy as np
 import h5py
 import os
-import sys
 import math
 import raster_helpers
 from scipy.signal import convolve2d
@@ -40,7 +39,9 @@ def make_buffer(buffer_fill, layer_data, cube_res, y_base):
     print("- computed buffer distances: ", buffer_dist)
     return buffer_dist, layer_data
 
-def reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers):
+def reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers, reduce_factor):
+    ### certainly a smarter way to do this but the point is to mirror the total number of params
+    ### in the data pyramid but in a cube
     total_params_cube = 0
     total_params_sample = 0
     for i in range(len(expected_sample_to)):
@@ -50,8 +51,9 @@ def reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers):
     ratio = math.sqrt(total_params_cube / total_params_sample)
     for i in range(len(expected_sample_to)):
         if i in x_layers:
-            expected_sample_to[i] = int(expected_sample_to[i] * ratio)
+            expected_sample_to[i] = int(expected_sample_to[i] * ratio * reduce_factor)
     print("- reduced sampling dimension to match natural total parameters:", expected_sample_to[0])
+    print("- using reduction factor:", reduce_factor)
     print("- new sample dimensions: ", expected_sample_to)
     return expected_sample_to
 
@@ -93,68 +95,160 @@ def idx_geo(ix, iy, geopack): #ulh, ulv, psh, psv):
 
 ### determine whether a sample is legal
 ### legality requires no missing data in the sample area
-def roundup_layer_1(k, base_idx, buffer_ignore, crs_list, yloc, nd_vals, expected_cube_size, layer_data,
-                    buffer_dist, half_offset, center_offset, buffer_fill):
+def roundup_layer_1(k, base_idx, buffer_ignore, crs_list, y_base, sample_res_factor, nd_vals, expected_cube_size,
+                    layer_data, buffer_dist, half_offset, center_offset, buffer_fill):
+    ### retrieve sample-resolution coordinates
     bi, bj = base_idx
-    geo_ctr = idx_geo(bi + 0.5, bj + 0.5, crs_list[yloc])
-    if k == yloc:
+    ### compute the crs coordinates of the center of the sample (y_base crs psh, psv * factor)
+    geo_ctr = idx_geo(bi+0.5, bj+0.5, (crs_list[y_base][0], crs_list[y_base][1],
+                                       crs_list[y_base][2]*sample_res_factor, crs_list[y_base][3]*sample_res_factor))
+    ### if the sampling resolution is the same as y_base resolution, check is easier because of same crs
+    if k == y_base and expected_cube_size[k] == 1:
+        ### if the value at this position is not nodata and is not NaN, were good
         if layer_data[k][bi, bj] != nd_vals[k] and not np.isnan(layer_data[k][bi, bj]).any():
             return True
+    ### in the event we only need to check one position, convert crs coords to idx and check
     elif expected_cube_size[k] == 1:
         tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        #print(tidi, tidj)
-        #if layer_data[k][int(tidi)+buffer_dist[k], int(tidj)+buffer_dist[k]] != nd_vals[k] and \
         if layer_data[k][int(tidi), int(tidj)] != nd_vals[k] and \
                 not np.isnan(layer_data[k][int(tidi), int(tidj)]).any():
-                #not np.isnan(layer_data[k][int(tidi)+buffer_dist[k], int(tidj)+buffer_dist[k]]).any():
             return True
     else:
-        ### need to determine UL
+        ### need to check multiple positions because sample res is bigger than layer res
+        ### so first determine UL of region to check in crs-space
         tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
 
+        ### convert to layer grid space
         sulx = int(tidi + half_offset[k]) - center_offset[k]
         suly = int(tidj + half_offset[k]) - center_offset[k]
 
+        ### extract samples within region
         temp = layer_data[k][sulx:sulx+expected_cube_size[k],
                              suly:suly+expected_cube_size[k]].reshape(-1)
+        ### check there are no nodata vals and no nans in region
         if nd_vals[k] not in temp and not np.isnan(temp).any():
             temp = temp[temp != buffer_ignore]
             if len(temp) > 0:
                 return True
     return False
 
+### function for parallelization of sample
+def verify_sample(params):
+    ### extract real parameters
+    i, override_shape, base_res, buffer_fill, layer_crs, y_base, sample_res_factor, layer_nodata, expected_cube_size, layer_data, buffer_dist, half_offset, center_offset = params
+    ### solution list
+    legal_sample_list_temp = []
+    ### just some user-friendly stuff for the impatient like me
+    if i % (override_shape[0] // 10) == 0:
+        print("-", end="", flush=True)
+    if i == override_shape[0] - 1:
+        print("->| done")
+    for j in range(override_shape[1]):
+        ### determine if nodata value is involved, and ignore buffer fill values
+        all_ok = True
+        tmins = []
+        tmaxs = []
+        ### within this sample region, check each cube for missing data etc
+        for k in range(len(base_res)):
+            ### check individual layer for nodata/NaN values within sample region
+            layer_k_np = roundup_layer_1(k, (i, j), buffer_fill, layer_crs, y_base, sample_res_factor, layer_nodata,
+                                         expected_cube_size, layer_data, buffer_dist, half_offset, center_offset,
+                                         buffer_fill)
+            ### if one layer is missing data, we have a problem
+            if layer_k_np == False:
+                all_ok = False
+                break
+        ### if all layers are ok within sample area, this is a legal sample
+        if all_ok:
+            legal_sample_list_temp.append((i, j))
+    pass
+
+### compile samples in parallel
+def compile_legal_samples(expected_cube_size, layer_data, y_base, base_res, dimension_override, buffer_fill,
+                          layer_crs, layer_nodata, buffer_dist, half_offset, center_offset, parallelize):
+    ### gather legal samples
+    ### ...batch based on regions?
+    legal_sample_idx_list = []
+    ### this is the shape of the y_base layer, (the layer crs we align to)
+    guide_shape = layer_data[y_base].shape
+    ### now determine the shape of the layer if we use dim_override resolution
+    ### as in --- the data at the desired sampling resolution
+    ### this res factor is sample_dim / base_dim, so divide for grid size and multiply for crs resolution
+    sample_res_factor = dimension_override / base_res[y_base]
+    override_shape = (int(guide_shape[0] / sample_res_factor), int(guide_shape[1] / sample_res_factor))
+    ### reformat parameters into list to provide to verify_sample
+    verify_params = []
+    for i in range(override_shape[0]):
+        verify_params.append([i, override_shape, base_res, buffer_fill, layer_crs, y_base, sample_res_factor,
+                              layer_nodata, expected_cube_size, layer_data, buffer_dist, half_offset, center_offset])
+
+
+    ### iterate over the sampling-resolution grid and check whether there is any missing data or other issues in sample
+    if parallelize:
+        print("- compiling legal samples in parallel mode...")
+        print("- compile samples progress ", end="", flush=True)
+        with Pool(None) as mpool:
+            resarr = mpool.map(verify_sample, verify_params)
+    else:
+        print("- compile samples progress ", end="", flush=True)
+        resarr = []
+        for i in range(override_shape[0]):
+            resarr.append(verify_sample(verify_params[i]))
+        print("- caution: running pyramids_main in nonparallel mode")
+
+    ### need to flatten results array now
+    for elt in resarr:
+        legal_sample_idx_list.extend(elt)
+
+    print("- rounded up layers: ", len(legal_sample_idx_list))
+    print("  - sampling at override dimension: ", dimension_override, " with factor: ", sample_res_factor)
+    print("  - maximum legal samples = ", override_shape[0] * override_shape[1])
+    return legal_sample_idx_list, override_shape
+
+
 ### TODO - parallelize
-def compile_legal_samples(expected_cube_size, layer_data, y_base, cube_res, buffer_fill,
+def compile_legal_samples_nonparallel(expected_cube_size, layer_data, y_base, base_res, dimension_override, buffer_fill,
                           layer_crs, layer_nodata, buffer_dist, half_offset, center_offset):
     ### gather legal samples
     ### ...batch based on regions?
     legal_sample_idx_list = []
+    ### this is the shape of the y_base layer, (the layer crs we align to)
     guide_shape = layer_data[y_base].shape
+    ### now determine the shape of the layer if we use dim_override resolution
+    ### as in --- the data at the desired sampling resolution
+    ### this res factor is sample_dim / base_dim, so divide for grid size and multiply for crs resolution
+    sample_res_factor = dimension_override / base_res[y_base]
+    override_shape = (int(guide_shape[0] / sample_res_factor), int(guide_shape[1] / sample_res_factor))
     print("- compile samples progress ", end="", flush=True)
-    for i in range(guide_shape[0]):
-        if i % (guide_shape[0] // 10) == 0:
+    ### iterate over the sampling-resolution grid and check whether there is any missing data or other issues in sample
+    for i in range(override_shape[0]):
+        ### just some user-friendly stuff for the impatient like me
+        if i % (override_shape[0] // 10) == 0:
             print("-", end="", flush=True)
-        if i == guide_shape[0] - 1:
+        if i == override_shape[0] - 1:
             print("->| done")
-        for j in range(guide_shape[1]):
+        for j in range(override_shape[1]):
             ### determine if nodata value is involved, and ignore buffer fill values
             all_ok = True
             tmins = []
             tmaxs = []
-            for k in range(len(cube_res)):
-                ### check individual layer for nodata
-                layer_k_np = roundup_layer_1(k, (i, j), buffer_fill, layer_crs, y_base,
-                                             layer_nodata, expected_cube_size, layer_data,
-                                             buffer_dist, half_offset, center_offset,
+            ### within this sample region, check each cube for missing data etc
+            for k in range(len(base_res)):
+                ### check individual layer for nodata/NaN values within sample region
+                layer_k_np = roundup_layer_1(k, (i, j), buffer_fill, layer_crs, y_base, sample_res_factor, layer_nodata,
+                                             expected_cube_size, layer_data, buffer_dist, half_offset, center_offset,
                                              buffer_fill)
+                ### if one layer is missing data, we have a problem
                 if layer_k_np == False:
                     all_ok = False
                     break
+            ### if all layers are ok within sample area, this is a legal sample
             if all_ok:
                 legal_sample_idx_list.append((i, j))
     print("- rounded up layers: ", len(legal_sample_idx_list))
-    print("  - maximum legal samples = ", guide_shape[0] * guide_shape[1])
-    return legal_sample_idx_list, guide_shape
+    print("  - sampling at override dimension: ", dimension_override, " with factor: ", sample_res_factor)
+    print("  - maximum legal samples = ", override_shape[0] * override_shape[1])
+    return legal_sample_idx_list, override_shape
 
 ### save list of legal samples for future use
 def save_legal_sample_ids(legal_sample_idx_list, fold_name):
@@ -295,9 +389,8 @@ def block_split_tranval_iter(block_mask, split_blocks_nregions, split_outer_buff
     return split_mask_i
 
 ### Split in geographic blocks
-def block_split(legal_sample_idx_list, partition, split_blocks_nregions, guide_shape,
-                split_blocks_buffer, fold_name, layer_proj, y_base, n_splits,
-                split_outer_buffer):
+def block_split(legal_sample_idx_list, partition, split_blocks_nregions, guide_shape, split_blocks_buffer, fold_name,
+                layer_proj, y_base, n_splits, split_outer_buffer):
     val_fold_indices = []
     train_fold_indices = []
     n_test_samples = int(len(legal_sample_idx_list) * partition[0])
@@ -306,6 +399,7 @@ def block_split(legal_sample_idx_list, partition, split_blocks_nregions, guide_s
     ### calculate block sizes from parameters
     minerr = 100000
     minoff = 0
+
 
     for i in range(max(temp_each_sqrt // 5, 1)):
         err1 = abs(
@@ -411,85 +505,50 @@ def fullrand_split(legal_sample_idx_list, partition, n_splits, fold_name, meta_i
     np.savetxt(fold_name + "/remaining.csv", remaining_indices, delimiter=",")
     print("- saved test indices")
 
-### should always return a 2d np array...
-def roundup_layer_2(k, base_idx, crs_list, yloc, layer_data, expected_cube_size, buffer_dist, half_offset,
-                    center_offset, sample_to_res):
-    bi, bj = base_idx
-    geo_ctr = idx_geo(bi + 0.5, bj + 0.5, crs_list[yloc])
-    if k == yloc:
-        return layer_data[[[bi]], [[bj]]]
-    elif expected_cube_size == 1:
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        return layer_data[[[int(tidi)+buffer_dist]],[[int(tidj)+buffer_dist]]]
-    else:
-        ### need to determine UL
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        tidi += buffer_dist
-        tidj += buffer_dist
-        sulx = int(tidi + half_offset) - center_offset
-        suly = int(tidj + half_offset) - center_offset
-        return layer_data[sulx:sulx+expected_cube_size,
-                             suly:suly+expected_cube_size]
-
-def roundup_layer_3(k, base_idx, crs_list, yloc, layer_data, expected_cube_size, buffer_dist, half_offset,
-                    center_offset, sample_to_res):
-    bi, bj = base_idx
-    geo_ctr = idx_geo(bi + 0.5, bj + 0.5, crs_list[yloc])
-    if k == yloc:
-        return layer_data[[[bi]], [[bj]]]
-    elif sample_to_res == 1:
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        return layer_data[[[int(tidi)+buffer_dist]], [[int(tidj)+buffer_dist]]]
-    else:
-        ### need to determine UL
-        ### have center saved...?
-        ### sample n points...
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        tidii = tidi + buffer_dist
-        tidjj = tidj + buffer_dist
-        ### UL is obtained...
-        sulx = int(tidi + half_offset) - center_offset
-        suly = int(tidj + half_offset) - center_offset
-        stepi = ((sulx-tidi)*2)/(sample_to_res - 1)
-        stepj = ((suly - tidj) * 2) / (sample_to_res - 1)
-        sampled = np.zeros((sample_to_res, sample_to_res))
-        for i in range(sample_to_res):
-            for j in range(sample_to_res):
-                sampled[i, j] = layer_data[int(i * stepi), int(j * stepj)]
-        return sampled
-
 def make_pyramid_layer(pyparams):
-    fold_name, h5_chunk_size, expected_cube_size, legal_sample_idx_list, k, layer_crs, test_indices, buffer_fill,\
+    ### extract individual params from list
+    fold_name, h5_chunk_size, expected_cube_size, dimension_override, legal_sample_idx_list, k, layer_crs, test_indices, buffer_fill,\
     n_splits, train_fold_indices, sample_min, sample_max, fold_min, fold_max, y_base, sample_to_res, layer_data,\
     buffer_dist, half_offset, center_offset = pyparams
-    ### make pyramid layer
 
+    ### TODO dimension override
+
+    ### NOW MAKE PYRAMID LAYER
+    ### remove any pre-existing layer files from directory
     os.system("rm " + fold_name + "/layer_" + str(k) + ".h5")
+    ### create new h5 file for this layer -- these sizes should be consistent with dimension override
     h5_data_file_i = h5py.File(fold_name + "/layer_" + str(k) + ".h5", "a")
     h5_file_set_i = h5_data_file_i.create_dataset("data", (h5_chunk_size, sample_to_res, sample_to_res),
                                         maxshape=(None, sample_to_res, sample_to_res),
                                         chunks=(h5_chunk_size, sample_to_res, sample_to_res))
 
+    ### initialize np array for h5 chunk
     h5_chunk_i = np.zeros((h5_chunk_size, sample_to_res, sample_to_res))
     h5_chunk_i.fill(-1)
 
-    h5_chunk_counter = 0
 
+    h5_chunk_counter = 0
+    ### use roundup 2a if the layer is already at the desired output resolution
+    ### this can be way more efficient becasue we don't need to draw sampling grid etc, can just extract from centers of
+    ### pixels
     if sample_to_res == expected_cube_size:
         roundup_active = roundup_layer_2a
         print("-", k, "running roundup 2a")
+    ### use roundup 3a if we need to sample at a non-native resolution
+    ### this requires drawing grid at sampling resolution, more costly
     else:
         roundup_active = roundup_layer_3a
         print("- running roundup 3a")
 
     ### deal with sampling dims...?
-
-
+    ### iterate over legal samples
     for i in range(len(legal_sample_idx_list)):
+        ### roundup sample at this location
         result = roundup_active(k, legal_sample_idx_list[i], layer_crs, y_base, layer_data, expected_cube_size,
                                  buffer_dist, half_offset, center_offset, sample_to_res)
-        ### add to h5
+        ### add to h5 chunk
         h5_chunk_i[h5_chunk_counter % h5_chunk_size, :, :] = result
+        ### if this sample is train/val, ... collect min/max info for later scaling
         if i not in test_indices:
             ### get scaling info
             mmcheck = result[result != buffer_fill]
@@ -505,6 +564,8 @@ def make_pyramid_layer(pyparams):
                         fold_min[j] = min(nanmin, fold_min[j])
                         fold_max[j] = max(nanmax, fold_max[j])
 
+        ### increment number of samples added to chunk. When the chunk is full,
+        ### move data to the h5 file, clear, and refill chunk.... because adding to h5 has overhead
         h5_chunk_counter += 1
         if h5_chunk_counter % h5_chunk_size == 0:
             ### resize to current number of items
@@ -515,7 +576,8 @@ def make_pyramid_layer(pyparams):
             h5_chunk_i = np.zeros(h5_chunk_i.shape)
             h5_chunk_i.fill(-1)
 
-    ### finish remainder of h5 chunk and save
+    ### when we are out of samples, move remaining samples in chunk to h5
+    ### then save h5 file
     h5_file_set_i.resize(h5_chunk_counter, axis=0)
     h5_file_set_i[h5_chunk_counter - (h5_chunk_counter % h5_chunk_size):h5_chunk_counter, :, :] = \
         np.array(h5_chunk_i[:h5_chunk_counter % h5_chunk_size, :, :])
@@ -524,12 +586,14 @@ def make_pyramid_layer(pyparams):
     return sample_min, sample_max, fold_min, fold_max
 
 
-def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size,
-                       legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, n_splits,
-                       layer_data, train_fold_indices, sample_to_res, buffer_dist, half_offset, center_offset):
+### TODO -- what does this do
+def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size, dimension_override,
+                       legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, n_splits, layer_data,
+                       train_fold_indices, sample_to_res, buffer_dist, half_offset, center_offset, parallel):
 
     print("- set up h5 datasets")
 
+    ### setup work
     ### for folds, organized as [fold][layer]
     samples_mins = []
     samples_maxs = []
@@ -546,22 +610,30 @@ def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size,
         samples_mins.append(float("inf"))
         samples_maxs.append(float("-inf"))
 
+    ### set up parameters to pass cleanly to make_pyramid_layer in parallel (just reformatting arguments above)
     pyramid_params = []
     for i in range(len(cube_res)):
-        pyramid_params.append([fold_name, h5_chunk_size, expected_cube_size[i], legal_sample_idx_list, i,
-                               layer_crs, test_indices, buffer_fill, n_splits, train_fold_indices,
-                               samples_mins[i], samples_maxs[i], folds_mins[i], folds_maxs[i], y_base,
-                               sample_to_res[i], layer_data[i], buffer_dist[i], half_offset[i], center_offset[i]])
-    parallel = True
+        pyramid_params.append([fold_name, h5_chunk_size, expected_cube_size[i], dimension_override,
+                               legal_sample_idx_list, i, layer_crs, test_indices, buffer_fill, n_splits,
+                               train_fold_indices, samples_mins[i], samples_maxs[i], folds_mins[i], folds_maxs[i],
+                               y_base, sample_to_res[i], layer_data[i], buffer_dist[i], half_offset[i],
+                               center_offset[i]])
+
+    ### map arguments to make_pyramid_layer function and collect results
     if parallel:
         with Pool(None) as mpool:
             resarr = mpool.map(make_pyramid_layer, pyramid_params)
     else:
-        pass
+        resarr = []
+        for i in range(pyramid_params):
+            resarr.append(make_pyramid_layer(pyramid_params))
+        print("- caution: running pyramids_main in nonparallel mode")
+
 
     print("- reformatted data to h5")
     print("- saved h5 files")
     print("- calculated min/max normalization parameters")
+    ### do some work with min/max info we collected...
     for i in range(len(resarr)):
         sample_min, sample_max, fold_min, fold_max = resarr[i]
         folds_mins[i] = fold_min
@@ -622,118 +694,6 @@ def roundup_layer_3a(k, base_idx, crs_list, yloc, layer_data, expected_cube_size
                 result[i, j] = layer_data[int(sulx + i*iterstep), int(suly + j*iterstep)]
         return result
 
-def pyramid_nonparallel(fold_name, h5_chunk_size, expected_cube_size, n_splits, layer_data, meta_indices,
-                        cube_res, legal_sample_idx_list, layer_crs, y_base, test_indices,
-                        train_fold_indices, buffer_fill, sample_to_res, buffer_dist, half_offset,
-                        center_offset):
-    ### setup for h5
-    h5_data_files = []
-    h5_file_sets = []
-    h5_chunks = []
-    h5_chunk_counter = 0
-    h5_chunkid = 0
-    for i in range(len(cube_res)):
-        os.system("rm " + fold_name + "/layer_" + str(i) + ".h5")
-        h5_data_files.append(h5py.File(fold_name + "/layer_" + str(i) + ".h5", "a"))
-        h5_file_sets.append(h5_data_files[i].create_dataset("data",
-                                                            (h5_chunk_size, sample_to_res[i],
-                                                             sample_to_res[i]),
-                                                            maxshape=(
-                                                            None, sample_to_res[i], sample_to_res[i]),
-                                                            chunks=(h5_chunk_size, sample_to_res[i],
-                                                                    sample_to_res[i])))
-        h5_chunks.append(np.zeros((h5_chunk_size, sample_to_res[i], sample_to_res[i])))
-        h5_chunks[-1].fill(-1)
-
-    print("- set up h5 datasets")
-
-    ### for folds, organized as [fold][layer]
-    samples_mins = []
-    samples_maxs = []
-    folds_mins = []
-    folds_maxs = []
-    for i in range(len(layer_data)):
-        folds_mins.append([])
-        folds_maxs.append([])
-        for j in range(n_splits):
-            folds_mins[i].append(float("inf"))
-            folds_maxs[i].append(float("-inf"))
-
-    for i in range(len(layer_data)):
-        samples_mins.append(float("inf"))
-        samples_maxs.append(float("-inf"))
-
-    if sample_to_res == expected_cube_size:
-        roundup_active = roundup_layer_2a
-        print("- running roundup 2a")
-    else:
-        roundup_active = roundup_layer_3
-        print("- running roundup 3a")
-
-    ### go back through combined list and compute min/max
-    ### convert to h5 and save
-    for i in range(len(meta_indices)):
-        ### get data for h5
-        ### if not in test, get min/max for normalization
-        for k in range(len(cube_res)):
-            result = roundup_active(k, legal_sample_idx_list[i], layer_crs, y_base, layer_data[k], expected_cube_size[k],
-                                 buffer_dist[k], half_offset[k], center_offset[k], sample_to_res[k])
-            ### add to h5
-            h5_chunks[k][h5_chunk_counter % h5_chunk_size, :, :] = result
-            if i not in test_indices:
-                ### get scaling info
-                ### a sample at layer i
-                mmcheck = result[result != buffer_fill]
-                if len(mmcheck > 0):
-                    nanmin = np.nanmin(mmcheck)
-                    nanmax = np.nanmax(mmcheck)
-                    ### adjust min/max for combined data ## good
-                    samples_mins[k] = min(nanmin, samples_mins[k])
-                    samples_maxs[k] = max(nanmax, samples_maxs[k])
-                    ### adjust min/max for individual splits
-                    for j in range(n_splits):
-                        if i in train_fold_indices[j]:
-                            folds_mins[k][j] = min(nanmin, folds_mins[k][j])
-                            folds_maxs[k][j] = max(nanmax, folds_maxs[k][j])
-
-        h5_chunk_counter += 1
-        if h5_chunk_counter % h5_chunk_size == 0:
-            for k in range(len(cube_res)):
-                ### resize to current number of items
-                h5_file_sets[k].resize(h5_chunk_counter, axis=0)
-                ### set values from current chunk
-                h5_file_sets[k][h5_chunk_counter - h5_chunk_size:h5_chunk_counter, :, :] = \
-                    np.array(h5_chunks[k][:, :, :])
-                h5_chunks[k] = np.zeros(h5_chunks[k].shape)
-                h5_chunks[k].fill(-1)
-
-    print("- reformatted data to h5")
-
-    ### finish remainder of h5 chunk and save
-    for k in range(len(cube_res)):
-        h5_file_sets[k].resize(h5_chunk_counter, axis=0)
-        h5_file_sets[k][h5_chunk_counter - (h5_chunk_counter % h5_chunk_size):h5_chunk_counter, :, :] = \
-            np.array(h5_chunks[k][:h5_chunk_counter % h5_chunk_size, :, :])
-        h5_data_files[k].close()
-
-    print("- saved h5 files")
-    print("- calculated min/max normalization parameters")
-    combined_mins = np.array(samples_mins)
-    combined_maxs = np.array(samples_maxs)
-    np.savetxt(fold_name + "/norm_layer_mins_combined.csv", combined_mins, delimiter=",")
-    np.savetxt(fold_name + "/norm_layer_maxs_combined.csv", combined_maxs, delimiter=",")
-
-    fold_np_mins = np.array(folds_mins).transpose()
-    fold_np_maxs = np.array(folds_maxs).transpose()
-    for j in range(n_splits):
-        np.savetxt(fold_name + "/norm_layer_mins_fold_" + str(j) + ".csv", fold_np_mins[j], delimiter=",")
-        np.savetxt(fold_name + "/norm_layer_maxs_fold_" + str(j) + ".csv", fold_np_maxs[j], delimiter=",")
-
-    print("- saved min/max normalization parameters")
-    print("- done")
-    print("- saved min/max normalization parameters")
-    print("- done")
-
 def save_info_file(data_info, expected_sample_to, fold_name, n_splits, buffer_fill, data_input_crs,
                    np_random_seed):
     ### SAVE INFO
@@ -741,8 +701,8 @@ def save_info_file(data_info, expected_sample_to, fold_name, n_splits, buffer_fi
         infofile.write(str(n_splits) + "," + str(buffer_fill) + "," + data_input_crs +
                        "," + str(np_random_seed))
         for i in range(len(data_info)):
-            infofile.write("\n" + str(expected_sample_to[i]) + "," + str(data_info[i][3]) + "," +
-                           str(data_info[i][4]) + "," + str(data_info[i][5]))
+            infofile.write("\n" + str(expected_sample_to[i]) + "," + str(data_info[i]["xy"]) + "," +
+                           str(data_info[i]["index"]) + "," + str(data_info[i]["name"]))
     print("- saved info file")
 
 def set_checkpoint(fold_name, checkpoint_number):
