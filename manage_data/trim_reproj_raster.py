@@ -75,7 +75,7 @@ def subdivide_extent(extent_src, extent_name, hv_split, overlap_width, overlap_s
 gdal.UseExceptions()
 ### main portion
 if len(sys.argv) > 1 and sys.argv[1] == "test_subdivide":
-    subdivide_extent("../data/extent/colorado/", "Colorado_State_Boundary_4326", (4, 2), 0.2, 0.05, 4326)
+    subdivide_extent("../data/extent/california/", "CA_State", (4, 2), 0.2, 0.05, 4326)
 
 """
 def raster_cleaning_operations(data_info, guiding_layer, extent_src, skip_guiding_load, extent_epsg_override=False):
