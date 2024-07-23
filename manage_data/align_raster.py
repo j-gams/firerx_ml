@@ -60,6 +60,10 @@ if __name__ == "__main__":
     extent_src = extent_src + extent_name
     ### if there is an issue with ability to read extent projection...
     extent_epsg_override = config["local"]["extent_epsg_override"]
+    ### whether to slice extent into smaller chunks to batch larger samples
+    extent_auto_reduce = config["local"]["extent_auto_reduce"]
+    ### degree to which extent should be reduced TODO -- tbd
+    extent_auto_reduce = config["loc"]["extent_auto_reduce_by"]
     ### step 1 save (trim to CO)
     trim_step_out = config["local"]["trim_step_out"]
     ### step 2 reproject (WGS 84)
