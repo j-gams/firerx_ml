@@ -1,6 +1,98 @@
 ## Manage Data -- Overview
 The manage_data directory contains tools for manageing data, particularly for cleaning raw raster data, aligning raster data for use in causal inference, and extracting analysis-ready datasets suitable for machine learning from raw raster data (both data cubes and data pyramids).
 
+<<<<<<< HEAD
+See more about the functionality of specific files, or how to align data for causal inference or build analysis-ready datasets:\
+[Files](#files)\
+[Causal Inference Alignment](#ci)\
+[Build Analysis-Ready Datasets](#mldata)
+
+
+### 1. Files <a name="files"></a>
+ - align_raster.py ([description](#align_raster))
+ - align_ci_helpers.py ([description](#align_cih))
+ - create_pyramid_set.py ([description](#pyramid))
+ - create_pyramid_functions.py ([description](#pyramid_func))
+ - raster_helpers.py ([description](#pyramid_help))
+ - aws_check.sh ([description](#aws_check))
+ - aws_psychic.sh ([description](#aws_psychic))
+ - configs ([description](#configs))
+
+#### 1.1 align_raster.py <a name="align_raster"></a>
+This is the main file for cleaning raw raster files and aligning them for Causal Inference. This process involves trimming the raster layers to the area of interest, reprojecting the raster layers to a consistent projection, and then resampling layers to have a consistent CRS and resolution. The default config for this process is ci_default_config.json. The parameters are as follows:
+
+| Parameter                         | Values                                  | Function                                                                                                                                                                                         |
+|-----------------------------------|-----------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| core:multiprocessing_mode         | True/False                              | True is recommended. This parameter determines whether alignment will be parallelized, which can result in huge time savings.                                                                    |
+ | core:work_mode                    | (local, aws_main, aws_work, aws_bigbox) | ...                                                                                                                                                                                              |
+ | core:aws_main_mode                | True/False                              | ...                                                                                                                                                                                              |
+ | core:aws_work_mode                | True/False                              | ...                                                                                                                                                                                              |
+ | core:aws_pems_dir                 | (file path)                             | ...                                                                                                                                                                                              |
+ | core:aws_workers                  | (remote addresses)                      | ...                                                                                                                                                                                              |
+ | core:aws_primary_box              | (integer)                               | ...                                                                                                                                                                                              |
+ | core:aws_inst_directory           | (directory name)                        | ...                                                                                                                                                                                              |
+ | core:aws_env_name                 | (conda env name)                        | ...                                                                                                                                                                                              |
+| core:s3_aligned_loc               | (s3 address)                            | ...                                                                                                                                                                                              |
+| core:s3_reproj_loc                | (s3 address)                            | ...                                                                                                                                                                                              |
+| local:data_directory_prefix       | (file path)                             | The base directory for data, and the directory in which to create and save the aligned dataset. This can be relative to the manage_data directory. The recommended path is `../data/`            |
+| local:raster_src                  | (file path)                             | The directory in which raw raster data is stored. The recommended path is `../data/raw_raster`                                                                                                   |
+| local:extent_src                  | (file path)                             | The directory in which the area of interest extent is stored. The recommended path is `../data/extent/[REGION_NAME]`                                                                             |
+| local:extent_name                 | (string)                                | The name of the extent to look for in the extent_src directory, minus any extensions (eg if the extent files include Colorado.prj, Colorado.shx, Colorado.shp, provide Colorado for extent_name) |
+| local:extent_epsg_override        | (string)                                | Override the projection of the extent to this value when the given value is inaccurate/faulty                                                                                                    |
+| local:auto_reduce_extent          | True/False                              |                                                                                                                                                                                                  |
+| local:auto_reduce_extent_by       | <value>                                 |                                                                                                                                                                                                  |
+| local:trim_step_out               | (directory name)                        | Directory to output trimmed raster files, to be created within the collection. The recommended directory name is `trimmed/`                                                                      |
+| local:reproj_step_out             | (directory name)                        | Directory to output reprojected raster files, to be created within the collection. The recommended directory name is `reprojected/`                                                              |
+| local:align_step_out              | (directory name)                        | Directory to output aligned raster files, to be created within the collection. The recommended directory name is `aligned/`                                                                      |
+| local:collection_directory_prefix | (file path)                             | The base directory for the collection to be created. The recommended path is `../data/aligned_raster`                                                                                            |
+| local:collection_name             | (directory name)                        | The name of this run is the directory in which all outputted files are saved (eg "align_colorado/")                                                                                              |
+| local:raw_data_from_s3            | True/False                              | False is recommended, especially when working locally.                                                                                                                                           |
+| local:check_local_s4              | True/False                              | False is recommended.                                                                                                                                                                            |
+| local:raw_raster_s3_prefix        | (s3 address)                            | ...                                                                                                                                                                                              |
+| local:raw_raster_s3_locs          | dict                                    | ...                                                                                                                                                                                              |
+| local:raw_extent_s3_loc           | (s3 path)                               | ...                                                                                                                                                                                              |
+| skip:guiding_load                 | True/False                              | Whether to skip loading the guiding layer first TODO                                                                                                                                             |
+| skip:trim                         | True/False                              | Whether to skip the raster trim step                                                                                                                                                             |
+| skip:raster_reproj                | True/False                              | Whether to skip the raster reprojection step                                                                                                                                                     |
+| skip:extent_reproj                | True/False                              | Whether to skip the reprojection of the extent to match the projection of rasters being trimmed                                                                                                  |
+| skip:resolution_check             | True/False                              | Whether to perform the check comparing the computed raster resolution to the given expected raster resolution                                                                                    |
+| skip:raw                          | True/False                              | ...                                                                                                                                                                                              |
+| skip:rm_existing_TEST             | True/False                              | Set to False. This variable is for testing/debugging only.                                                                                                                                       |
+| skip:subset_data_TEST             | True/False                              | Set to False. This variable is for testing/debugging only.                                                                                                                                       |
+| skip:worker_subset_TEST           | True/False                              | Set to False. This variable is for testing/debugging only.                                                                                                                                       |
+| skip:skip_checkpoint              | int                                     |                                                                                                                                                                                                  |
+| skip:aws_skip_fullsetup           | True/False                              |                                                                                                                                                                                                  |
+| skip:aws_skip_transfer_raw        | True/False                              |                                                                                                                                                                                                  |
+| skip:aws_skip_transfer            | list of indices                         |                                                                                                                                                                                                  |
+| skip:aws_skip_begin               | list of indices                         |                                                                                                                                                                                                  |
+| params:res_check_tol              | double                                  | 0.001 default value recommended. This value                                                                                                                                                      |
+| params:output_nodata              | int                                     | -99999 default value recommended. This value                                                                                                                                                     |
+| params:resampling_mode            | (n_meter,)                              | n_meter is currently the only working (and recommended) resampling mode                                                                                                                          |
+| data:align_to_layer               | dict                                    |                                                                                                                                                                                                  |
+| data:data_info                    | list                                    |                                                                                                                                                                                                  |
+| data:subset                       | list or None                            |                                                                                                                                                                                                  |
+ 
+
+#### 1.2 align_ci_helpers.py <a name="align_cih"></a>
+#### 1.3 create_pyramid_set.py <a name="pyramid"></a>
+This is the main file for building analysis ready datasets, from data pyramids to data cubes. The default config file for this process is mldata_default_config.json. The parameters are as follows:
+
+| Parameter                     | Values                  | Function                                                                                                                                                                                                                     |
+|-------------------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| core:mode                     | (pyramid, cube, adjust) | This parameter dictates whether the program creates a set of data pyramids (pyramid), full-resolution data cubes (cube), or adjusted resolution data cubes (adjust)                                                          |
+| core:run_name_suffix_default  | (string)                | The "name" of each run is dictated by the mode followed by this suffix (eg pyramid_set1 where the suffix is "set1"). This is used for directory names, etc.                                                                  |                                                                                                                                                                 |
+| core: run_name_prefix         | (file path)             | The directory in which to create and save the resulting dataset. This can be relative to the manage_data directory. The recommended path is `../data/ml_sets/`       .                                                       |
+ | params:dimension_override     | sample meters (int)     | This value dictates the size of samples to be built, eg when set to 1000 the program extracts samples on a 1000m*1000m grid. When set to -1, the size is determined by the grid size of the layer specified by `base_layer`. | 
+ | params:cube_reduce_dim_factor | factor (scalar > 0)     | This value dictates the ratio of                                                                                                                                                                                             | 
+#### 1.4 create_pyramid_functions.py <a name="pyramid_func"></a>
+#### 1.5 raster_helpers.py <a name="pyramid_help"></a>
+#### 1.6 aws_check.sh <a name="aws_check"></a>
+#### 1.7 aws_psychic.sh <a name="aws_psychic"></a>
+
+### 2. Align Data for Causal Inference <a name="ci"></a>
+This is an overview of how to align a dataset for Causal Inference.
+update the 
+=======
 See more about the functionality of specific files, or how to align data for causal inference or build analysis-ready datasets:
 [Files](#files)
 [Causal Inference Alignment](#ci)
@@ -17,4 +109,5 @@ See more about the functionality of specific files, or how to align data for cau
  - aws_psychic.sh
  - 
 ### 2. Align Data for Causal Inference <a name="ci"></a>
+>>>>>>> c706b9df77e455d7fe4b707fe26f399fb01a7c7b
 ### 3. Build Analysis-Ready Datasets <a name="mldata"></a>
