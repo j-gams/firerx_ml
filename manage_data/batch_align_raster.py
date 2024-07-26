@@ -87,6 +87,7 @@ if __name__ == "__main__":
     ### extent source with different formulation now
     extent_info = config["data"]["extent_info"]
     extent_epsg_override = config["data"]["extent_epsg_override"]
+    exclude = config["data"]["exclude"]
 
     ### diagnostic check on what we're doing here...
     print("init - process summary:")
@@ -113,16 +114,20 @@ if __name__ == "__main__":
     ### makes gdal less annoying
     gdal.UseExceptions()
 
-    ### TODO -- rework dataset subsetting
+    print("init - subsetting dataset")
+    subset = []
+    init_guiding_idx = guiding_layer_idx
+    for i in range(len(data_info)):
+        if i in exclude:
+            if i < guiding_layer_idx:
+                init_guiding_idx -= 1
+        else:
+            subset.append(data_info[i])
+    guiding_layer_idx = init_guiding_idx
+    data_info = subset
+
 
     ### TODO -- rework data_info to be more like create_pyramid_set -- everything thorugh data_info with guiding idx
-    ### load unaligned raw data
-    raster = []
-    raster_proj = []
-    raster_ndvals = []
-    raster_size = []
-    raster_crs = []
-    raster_nparray = []
 
     ### LOAD RAW GUIDING LAYER DATA ... for setup. delete after.
     if not skip_guiding_load:
@@ -154,7 +159,7 @@ if __name__ == "__main__":
         ### if there is trouble extracting the genuine projection and we are getting nonsense, reset it to the known val
         if extent_epsg_override is not False:
             print("extent - overriding extent epsg from", extent_epsg, "to", extent_epsg_override)
-            extent_epsg = extent_epsg_override
+            extent_epsg = int(extent_epsg_override)
         print("extent - epsg check", extent_epsg)
         ### now reproject the base extent to match the projection of the guiding raster layer
         if not skip_extent_reproj:
@@ -191,6 +196,28 @@ if __name__ == "__main__":
     ### now... need to iterate over subregions
     for subregion_idx in range(len(subregions)):
         sub_i, sub_j = subregions[subregion_idx]
+
+        sub_datsrc = ogr.Open(extent_info["extent_src"] + "subregions/" + new_proj_base + '_' + str(extent_epsg) + '_' + str(sub_i) + '_' + str(sub_j) + '.shp')
+        numLayers = sub_datsrc.GetLayerCount()
+        sub_vlayer = sub_datsrc.GetLayer()
+        sub_area = 0
+        for vfeature in sub_vlayer:
+            vgeom = vfeature.GetGeometryRef()
+            sub_area = vgeom.GetArea()
+
+        print("subregion area", (sub_i, sub_j), sub_area)
+        if sub_area == 0:
+            print("subregion with 0 area:", (sub_i, sub_j))
+            continue
+
+        ### load unaligned raw data
+        raster = []
+        raster_proj = []
+        raster_ndvals = []
+        raster_size = []
+        raster_crs = []
+        raster_nparray = []
+
         ### LOAD RAW raster DATA
         print("raw - loading raw raster data")
         for i in range(len(data_info)):
@@ -260,9 +287,8 @@ if __name__ == "__main__":
                     else:
                         ### move the file along to the next checkpoint...
                         os.system('cp ' + trim_step_dir + data_info[i]["name"] + '_' + str(layer_epsg) + '_' +
-                                  str(sub_i) + '_' + str(sub_j) +
-                                  '.tif ' + reproj_step_dir + data_info[i]["name"] + '_' + str(sub_i) + '_' +
-                                  str(sub_j) + '.tif')
+                                  str(sub_i) + '_' + str(sub_j) + '.tif ' + reproj_step_dir + data_info[i]["name"] +
+                                  '_' + str(layer_epsg) + '_' + str(sub_i) + '_' + str(sub_j) + '.tif')
                 else:
                     print("  - reprojection required -- x epsg = ", layer_epsg, "-- guiding epsg = ", temp_guiding_epsg)
                     ### compute desired pixel resolutions in consistent crs by computing ratio
@@ -282,7 +308,7 @@ if __name__ == "__main__":
                 ### load trimmed and reprojected rasters
                 print("  - loading fixed file -", end="", flush=True)
                 ### open file with gdal
-                raster.append(gdal.Open(reproj_step_dir + data_info[i]["name"] + '_' + str(sub_i) + '_' + str(sub_j) +
+                raster.append(gdal.Open(reproj_step_dir + data_info[i]["name"] + '_' + str(temp_guiding_epsg) + '_' + str(sub_i) + '_' + str(sub_j) +
                                         '.tif'))
                 ### get data from first raster band
                 tdata_rband = raster[-1].GetRasterBand(1)
@@ -375,7 +401,7 @@ if __name__ == "__main__":
 
                 ### obtain layer geotif
                 driver = gdal.GetDriverByName("GTiff")
-                outname = collection_prefix + "/" + data_info[i]["name"] + ".tif"
+                outname = align_step_dir + "/" + data_info[i]["name"] + "_" + str(sub_i) + "_" + str(sub_j) + ".tif"
                 layer_out = driver.Create(outname, layer_geotif.shape[0], layer_geotif.shape[1], 1,
                                           gdal.GDT_Float32)
                 layer_out.SetGeoTransform(layer_full_crs)

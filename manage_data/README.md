@@ -53,7 +53,7 @@ The default config for this process is dbci_default_config.json. The parameters 
 | data:extent_epsg_override        |        |                                                                                                                                         |
 | data:extent_info                 |        |                                                                                                                                         |
 | data:data_info                   |        |                                                                                                                                         |
-|                                  |        |                                                                                                                                         |
+| data:exclude                     |        |                                                                                                                                         |
 
 #### 1.2 align_raster.py <a name="align_raster"></a>
 This is the old and busted file for cleaning raw raster files and aligning them for Causal Inference. Use at your own peril. 

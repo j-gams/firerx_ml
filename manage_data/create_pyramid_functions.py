@@ -27,7 +27,7 @@ def make_buffer(buffer_fill, layer_data, cube_res, dimension_override):
     buffer_dist = []
     for i in range(len(cube_res)):
         buffer_dist.append(dimension_override // (2*cube_res[i]) + 1)
-        np.pad(layer_data[i], (buffer_dist[i], buffer_dist[i]), mode="constant", constant_values=buffer_fill)
+        layer_data[i] = np.pad(layer_data[i], (buffer_dist[i], buffer_dist[i]), mode="constant", constant_values=buffer_fill[i])
     print("- computed buffer distances: ", buffer_dist)
     return buffer_dist, layer_data
 
@@ -87,87 +87,71 @@ def idx_geo(ix, iy, geopack): #ulh, ulv, psh, psv):
 
 ### determine whether a sample is legal
 ### legality requires no missing data in the sample area
-def roundup_layer_1(k, base_idx, buffer_ignore, crs_list, y_base, sample_res_factor, nd_vals, expected_cube_size,
-                    layer_data, buffer_dist, half_offset, center_offset, buffer_fill):
+def roundup_layer_1a(k, base_idx, buffer_ignore, crs_list, y_base, nd_vals, expected_cube_size,
+                    layer_data, buffer_dist, half_offset, center_offset, base_scaled_crs):
     ### retrieve sample-resolution coordinates
-    ### these are in guiding crs (no buffer offset)
+    ### these ids are wrt guiding UL (no buffer offser)
     bi, bj = base_idx
-    ### compute the crs coordinates of the center of the sample (y_base crs psh, psv * factor)
-    ### these are in guiding crs (no buffer offset)
-    geo_ctr = idx_geo(bi+0.5, bj+0.5, (crs_list[y_base][0], crs_list[y_base][1],
-                                       crs_list[y_base][2]*sample_res_factor, crs_list[y_base][3]*sample_res_factor))
-    ### if the sampling resolution is the same as y_base resolution, check is easier because of same crs
-    if k == y_base and expected_cube_size[k] == 1:
-        ### if the value at this position is not nodata and is not NaN, were good
-        ### still need to convert from guiding coords to indices taking buffer into account (add buffer_dist)
-        if layer_data[k][bi+buffer_dist[k], bj+buffer_dist[k]] != nd_vals[k] and \
-                not np.isnan(layer_data[k][bi+buffer_dist[k], bj+buffer_dist[k]]).any():
-            return True
-    ### in the event we only need to check one position, convert crs coords to idx and check
-    elif expected_cube_size[k] == 1:
-        ### still need to convert from guiding coords to indices taking buffer into account (add buffer_dist)
-        ### geo idx is ok
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
-        if layer_data[k][int(tidi)+buffer_dist[k], int(tidj)+buffer_dist[k]] != nd_vals[k] and \
-                not np.isnan(layer_data[k][int(tidi)+buffer_dist[k], int(tidj)+buffer_dist[k]]).any():
-            return True
-    else:
-        ### need to check multiple positions because sample res is bigger than layer res
-        ### so first determine UL of region to check in crs-space
-        tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
+    ### convert to base layer ids
+    bi *= base_scaled_crs
+    bj *= base_scaled_crs
+    ### get coords from base crs
+    geo_ctri, geo_ctrj = idx_geo(bi + 0.5, bj + 0.5, crs_list[y_base])
+    ### convert to ids in layer crs
+    tidi, tidj = geo_idx(geo_ctri, geo_ctrj, crs_list[k])
+    ### convert to layer grid space (UL) + offset
+    sulx = int(tidi + half_offset) - center_offset
+    suly = int(tidj + half_offset) - center_offset
+    ###
+    gather = layer_data[sulx+buffer_dist: sulx + buffer_dist + expected_cube_size, suly + buffer_dist: suly+buffer_dist + expected_cube_size].reshape(-1)
+    if np.isnan(np.sum(gather)):
+        return False
+    if buffer_ignore in gather:
+        return False
+    if nd_vals in gather:
+        return False
+    return True
 
-        ### convert to layer grid space
-        sulx = int(tidi + half_offset[k]) - center_offset[k]
-        suly = int(tidj + half_offset[k]) - center_offset[k]
-
-        ### extract samples within region
-        ### still need to convert from guiding coords to indices taking buffer into account (add buffer_dist)
-        temp = layer_data[k][sulx+buffer_dist[k]:sulx+buffer_dist[k]+expected_cube_size[k],
-                             suly+buffer_dist[k]:suly+buffer_dist[k]+expected_cube_size[k]].reshape(-1)
-        ### check there are no nodata vals and no nans in region
-        if nd_vals[k] not in temp and not np.isnan(temp).any():
-            temp = temp[temp != buffer_ignore]
-            if len(temp) > 0:
-                return True
-    return False
-
-### TODO - parallelize?
 def compile_legal_samples(expected_cube_size, layer_data, y_base, base_res, dimension_override, buffer_fill,
-                          layer_crs, layer_nodata, buffer_dist, half_offset, center_offset):
+                          layer_crs, layer_nodata, buffer_dist, half_offset, center_offset, layer_size):
     ### gather legal samples
     ### ...batch based on regions?
     legal_sample_idx_list = []
     ### this is the shape of the y_base layer, (the layer crs we align to)
-    guide_shape = layer_data[y_base].shape
+    guide_layer_shape = layer_data[y_base].shape
     ### now determine the shape of the layer if we use dim_override resolution
     ### as in --- the data at the desired sampling resolution
     ### this res factor is sample_dim / base_dim, so divide for grid size and multiply for crs resolution
     sample_res_factor = dimension_override / base_res[y_base]
+
     ### subtract the buffer dist...
-    override_shape = (int((guide_shape[0] - (2*buffer_dist[y_base]))/ sample_res_factor),
-                      int((guide_shape[1] - (2*buffer_dist[y_base]))/ sample_res_factor))
+    override_shape = (int((guide_layer_shape[0] - (2*buffer_dist[y_base])) / sample_res_factor),
+                      int((guide_layer_shape[1] - (2*buffer_dist[y_base])) / sample_res_factor))
+
+    #base_scaled_crs = (layer_crs[y_base][0], layer_crs[y_base][1], layer_crs[y_base][2] * sample_res_factor, layer_crs[y_base][3] * sample_res_factor)
+    ### TODO -- rename if this works
+    base_scaled_crs = sample_res_factor
+    ### perform quick sanity check...
+    falsecount = 0
     ### from here override_shape is confined to tbe region of base layer within buffer zone but other layers have buffer
     print("- compile samples progress ", end="", flush=True)
     ### iterate over the sampling-resolution grid and check whether there is any missing data or other issues in sample
     for i in range(override_shape[0]):
         ### just some user-friendly stuff for the impatient like me
-        if i % (override_shape[0] // 10) == 0:
+        if i % (override_shape[0] // 20) == 0:
             print("-", end="", flush=True)
         if i == override_shape[0] - 1:
             print("->| done")
         for j in range(override_shape[1]):
             ### determine if nodata value is involved, and ignore buffer fill values
             all_ok = True
-            tmins = []
-            tmaxs = []
             ### within this sample region, check each cube for missing data etc
             for k in range(len(base_res)):
                 ### check individual layer for nodata/NaN values within sample region
-                layer_k_np = roundup_layer_1(k, (i, j), buffer_fill, layer_crs, y_base, sample_res_factor, layer_nodata,
-                                             expected_cube_size, layer_data, buffer_dist, half_offset, center_offset,
-                                             buffer_fill)
+                layer_k_np = roundup_layer_1a(k, (i + buffer_dist[y_base],j + buffer_dist[y_base]), buffer_fill[k], layer_crs, y_base, layer_nodata[k], expected_cube_size[k],
+                                              layer_data[k], buffer_dist[k], half_offset[k], center_offset[k], base_scaled_crs)
                 ### if one layer is missing data, we have a problem
-                if layer_k_np == False:
+                if not layer_k_np:
                     all_ok = False
                     break
             ### if all layers are ok within sample area, this is a legal sample
@@ -498,7 +482,7 @@ def qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size
     block_mask = block_mask_in.copy()
     ### sample mask for lazily drawing over
     sample_mask = block_mask_in.copy()
-    print("- building blocks (qbi2) (step=5)", end="", flush=True)
+    print("- building blocks (qbi2) (step=5) ", end="", flush=True)
     successes = 0
     block_idx = 0
     ### new strategy: set values within size+ibb of point in block_mask to 2
@@ -516,7 +500,7 @@ def qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size
             rand_ctr_j = narrowlist[1][rand_idx]
             if block_mask[rand_ctr_i, rand_ctr_j] == 0:
                 ### we have a legal sample center
-                if block_idx % (n_blocks // 5) == 0:
+                if block_idx % (n_blocks // 20) == 0:
                     print("-", end="", flush=True)
 
                 ### start with large block, and overlay
@@ -526,7 +510,7 @@ def qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size
                 ### remove samples from end until we get back to to_add samples
 
                 ### number of samples to add
-                to_add = min(n_samples - (block_idx * approx_each), approx_each)
+                to_add = min(n_samples - (block_idx * int(approx_each)), int(approx_each))
                 ### initial size of search block
                 search_size = approx_size
                 ### random number, either 1 or -1
@@ -536,19 +520,20 @@ def qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size
                 while True:
                     ### create np array of size search_size
                     search_ul = (max(0, rand_ctr_i - search_size//2), max(0, rand_ctr_j - search_size//2))
-                    search_lr = (min(block_mask.shape[0], rand_ctr_i + search_size - search_size//2),
-                                 min(block_mask.shape[1], rand_ctr_j + search_size - search_size//2))
+                    search_lr = (min(block_mask.shape[0]-1, rand_ctr_i + search_size - search_size//2),
+                                 min(block_mask.shape[1]-1, rand_ctr_j + search_size - search_size//2))
                     ### how many zero values do we have in this region
                     search_yield = np.where(block_mask[search_ul[0]:search_lr[0], search_ul[1]:search_lr[1]] == 0)
-                    if len(search_yield) >= to_add:
+                    if len(search_yield[0]) >= to_add:
                         ### all good, we can now draw block
                         ### issue: determine which edges to drop
                         ### idea: randomly pick a corner and direction, revert original values
                         full_block_search = (search_yield[0] + search_ul[0], search_yield[1] + search_ul[1])
-                        block_mask[full_block_search] = block_idx
+                        ### set to iter value
+                        block_mask[full_block_search] = block_idx + 4
 
                         ### now backtrack until we have the right number in total...
-                        over_amt = len(search_yield) - to_add
+                        over_amt = len(search_yield[0]) - to_add
                         if over_amt > 0:
                             ### pick a corner by picking an i and a j
                             over_corner = ([search_ul[0], search_lr[0]][iter_corner_i],
@@ -561,38 +546,39 @@ def qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size
                                     for over_j in range(search_lr[1] - search_ul[1]):
                                         i = over_corner[0] + (over_i * iter_dir_i)
                                         j = over_corner[1] + (over_j * iter_dir_j)
-                                        if block_mask[i, j] == block_idx:
+                                        if block_mask[i, j] == block_idx + 4:
                                             block_mask[i, j] = 0
                                             over_amt -= 1
-                                            if over_amt == 0:
+                                            if over_amt <= 0:
                                                 break
-                                    if over_amt == 0:
+                                    if over_amt <= 0:
                                         break
                             else:
                                 for over_j in range(search_lr[1] - search_ul[1]):
                                     for over_i in range(search_lr[0] - search_ul[0]):
                                         i = over_corner[0] + (over_i * iter_dir_i)
                                         j = over_corner[1] + (over_j * iter_dir_j)
-                                        if block_mask[i, j] == block_idx:
+                                        if block_mask[i, j] == block_idx + 4:
                                             block_mask[i, j] = 0
                                             over_amt -= 1
-                                            if over_amt == 0:
+                                            if over_amt <= 0:
                                                 break
-                                    if over_amt == 0:
+                                    if over_amt <= 0:
                                         break
                         ### now mask out selection in sample_mask
                         mask_ul = (max(0, search_ul[0]-initial_block_buffer), max(0, search_ul[1]-initial_block_buffer))
-                        mask_lr = (min(block_mask.shape[0], search_lr[0] + initial_block_buffer),
-                                     min(block_mask.shape[1], search_lr[1] + initial_block_buffer))
+                        mask_lr = (min(block_mask.shape[0]-1, search_lr[0] + initial_block_buffer),
+                                     min(block_mask.shape[1]-1, search_lr[1] + initial_block_buffer))
                         sample_mask[mask_ul[0]: mask_lr[0], mask_ul[1]: mask_lr[1]] = 3
                         successes += 1
+                        break
                     else:
                         ### not enough samples in grid... need to increase size
                         search_size += 2
                         if search_size > cost_cap:
-                            print(" -s-> cost cap (size of iterative block) exceeded:", search_size)
+                            print("-s-> cost cap (size of iterative block) exceeded:", search_size)
                             print(" - center:", (rand_ctr_i, rand_ctr_j), " search_ul/lr", search_ul, search_lr)
-                            print(" - rand:", rand_idx, "out of", len(narrowlist))
+                            print(" - rand:", rand_idx, "out of", len(narrowlist[0]), " ... ", )
                             break
 
             else:
@@ -624,9 +610,9 @@ def quick_block_split(legal_sample_idx_list, partition, split_blocks_nregions, g
                                 layer_proj[y_base][0][5] * sample_res_factor)
 
     ### set up block mask
-    block_mask = np.zeros(guide_shape, dtype=np.int16)
+    block_mask = np.ones(guide_shape, dtype=np.int16)
     ### set up array for metaindices
-    metaindex_arr = np.ones(guide_shape)
+    metaindex_arr = np.zeros(guide_shape)
     for i in range(len(legal_sample_idx_list)):
         ti, tj = legal_sample_idx_list[i]
         block_mask[ti, tj] = 0
@@ -641,7 +627,6 @@ def quick_block_split(legal_sample_idx_list, partition, split_blocks_nregions, g
     print("- saved diagnostic initial geotif visualizations")
 
     ### first, do test...
-    ### TODO -- cost limit param
     ### qbi_2(block_mask_in, n_blocks, n_samples, approx_each, cost_cap, approx_size, initial_block_buffer)
     block_mask = qbi_2(block_mask, split_blocks_nregions, n_test_samples, approx_each[0], min(guide_shape)//4,
                        approx_block_size[0], split_blocks_buffer)

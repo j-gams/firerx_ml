@@ -15,6 +15,7 @@ if __name__ == "__main__":
     #import raster_helpers ### TODO -- what is this
     import create_pyramid_functions as cpf
     from utils import utils
+    import raster_helpers
     starttime = time.process_time()
 
     ### DEAL WITH PARAMETERS FROM CONFIG FILE...
@@ -120,6 +121,8 @@ if __name__ == "__main__":
             else:
                 y_layers.append(i)
 
+    print("base_res", base_res, base_res[y_base])
+
     ### either use override pyramid/cube size or base off y_base
     ### use dimension_override from now on
     if dimension_override == -1:
@@ -191,7 +194,7 @@ if __name__ == "__main__":
     cpf.save_info_file(data_info, expected_sample_to, fold_name, partition_n_splits, buffer_fill, data_input_crs, np_random_seed)
     ### make a buffer around data layers to avoid going out of bounds... involves resizing data
     print("padding data to avoid out-of-bounds errors")
-    buffer_dist, layer_data = cpf.make_buffer(buffer_fill, layer_data, base_res, dimension_override)
+    buffer_dist, layer_data = cpf.make_buffer(layer_nodata, layer_data, base_res, dimension_override)
     ### compute sampling offsets for dealing with odd and even sizes in sample generation
     center_offset, half_offset = cpf.compute_offsets(expected_cube_size, layer_data)
 
@@ -210,9 +213,9 @@ if __name__ == "__main__":
         legal_sample_idx_list, guide_shape, sample_res_factor = cpf.compile_legal_samples(expected_cube_size,
                                                                                           layer_data, y_base, base_res,
                                                                                           dimension_override,
-                                                                                          buffer_fill, layer_crs,
+                                                                                          layer_nodata, layer_crs, #this nodata is pad fill
                                                                                           layer_nodata, buffer_dist,
-                                                                                          half_offset, center_offset)
+                                                                                          half_offset, center_offset, layer_size)
         ### save legal sample index list
         ### these indices are in the non-buffer grid
         cpf.save_legal_sample_ids(legal_sample_idx_list, fold_name)
@@ -250,7 +253,7 @@ if __name__ == "__main__":
                 layer_names.append(item.split("/")[-1].split(".")[0])
                 layer_raster = gdal.Open(item)
                 layer_data.append(layer_raster.ReadAsArray().transpose())
-                del rasterband
+                #del rasterband
                 del layer_raster
             print("- total psutil process memory (GB):", psutil.virtual_memory()[3] / 1000000000)
     else:

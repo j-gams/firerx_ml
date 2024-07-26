@@ -68,62 +68,11 @@ def subdivide_extent(extent_src, extent_name, hv_split, overlap_width, overlap_s
             ### create the data source
             print("subdivide - created subregion bounding box", i, j)
             os.system('ogr2ogr -f "ESRI Shapefile" -clipsrc ' + mini_slice_grid[i][j] + ' ' +
-                      extent_src + 'subregions/' + extent_name + '_' + str(i) + '_' + str(j) + '.shp ' +
-                      extent_src + extent_name + '.shp ')
+                      extent_src + 'subregions/' + extent_name + '_' + str(input_epsg) + '_' + str(i) + '_' + str(j) +
+                      '.shp ' + extent_src + extent_name + '.shp ')
 
 
 gdal.UseExceptions()
 ### main portion
 if len(sys.argv) > 1 and sys.argv[1] == "test_subdivide":
     subdivide_extent("../data/extent/california/", "CA_State", (2, 4), 0.2, 0.05, 3785)
-
-"""
-def raster_cleaning_operations(data_info, guiding_layer, extent_src, skip_guiding_load, extent_epsg_override=False):
-    ### load unaligned raw data... setup lists
-    raster = []
-    raster_proj = []
-    raster_ndvals = []
-    raster_size = []
-    raster_crs = []
-    raster_nparray = []
-
-    ### LOAD RAW GUIDING LAYER DATA
-    if not skip_guiding_load:
-        print("loading guiding layer: ", data_info[guiding_layer]["loc"])
-        yraster = gdal.Open()
-
-        print("loading guiding layer: " + align_to_layer["loc"])
-        yraster = gdal.Open(raster_src + align_to_layer["loc"])
-        yrband = yraster.GetRasterBand(1)
-        yr_ndval = yrband.GetNoDataValue()
-        yr_size = (yraster.RasterXSize, yraster.RasterYSize)
-        yulh, yph, _, yulv, _, ypv = yraster.GetGeoTransform()
-        ypv = abs(ypv)
-        yr_proj = yraster.GetProjection()
-        yr_crs = (yulh, yulv, yph, ypv)
-        yr_nparray = yraster.ReadAsArray().transpose()
-        yr_full_geotrans = yraster.GetGeoTransform()
-
-        yr_epsg = osr.SpatialReference(wkt=yr_proj).GetAttrValue('AUTHORITY', 1)
-
-        ### expect 4326 for WUE
-        print("  - guiding layer epsg", yr_epsg)
-
-    print("loading extent")
-    extent = gdal.OpenEx(extent_src + ".shp", sibling_files=[extent_src + ".prj"])
-    extent_proj = extent.GetLayer().GetSpatialRef()
-    extent_epsg = extent_proj.GetAttrValue('AUTHORITY', 1)
-    if extent_epsg_override is not False:
-        print("overriding extent epsg from", extent_epsg, "to", extent_epsg_override)
-        extent_epsg = extent_epsg_override
-    print("extent epsg", extent_epsg)
-    ### reproject to match baseline proj
-    if not skip_extent_reproj:
-        print("reprojecting and saving extent shapefile in original location")
-        if rm_existing_TEST:
-            os.system('rm ' + extent_src + '_' + str(yr_epsg) + '.shp')
-        os.system(
-            'ogr2ogr -f "ESRI Shapefile" -t_srs EPSG:' + str(yr_epsg) + ' -s_srs EPSG:' + str(extent_epsg) + ' ' +
-            extent_src + '_' + str(yr_epsg) + '.shp ' + extent_src + '.shp')
-        correct_proj_extent = extent_src + "_" + str(yr_epsg) + ".shp"
-        new_proj_base = extent_src"""
