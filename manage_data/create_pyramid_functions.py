@@ -26,7 +26,7 @@ def compute_expected_cube_sizes(y_layer_max, cube_res):
 def make_buffer(buffer_fill, layer_data, cube_res, dimension_override):
     buffer_dist = []
     for i in range(len(cube_res)):
-        buffer_dist.append(dimension_override // (2*cube_res[i]) + 1)
+        buffer_dist.append(dimension_override//cube_res[i] + 1)
         layer_data[i] = np.pad(layer_data[i], (buffer_dist[i], buffer_dist[i]), mode="constant", constant_values=buffer_fill[i])
     print("- computed buffer distances: ", buffer_dist)
     return buffer_dist, layer_data
@@ -90,7 +90,7 @@ def idx_geo(ix, iy, geopack): #ulh, ulv, psh, psv):
 def roundup_layer_1a(k, base_idx, buffer_ignore, crs_list, y_base, nd_vals, expected_cube_size,
                     layer_data, buffer_dist, half_offset, center_offset, base_scaled_crs):
     ### retrieve sample-resolution coordinates
-    ### these ids are wrt guiding UL (no buffer offser)
+    ### these ids are wrt guiding UL (no buffer offset)
     bi, bj = base_idx
     ### convert to base layer ids
     bi *= base_scaled_crs
@@ -103,8 +103,12 @@ def roundup_layer_1a(k, base_idx, buffer_ignore, crs_list, y_base, nd_vals, expe
     sulx = int(tidi + half_offset) - center_offset
     suly = int(tidj + half_offset) - center_offset
     ###
-    gather = layer_data[sulx+buffer_dist: sulx + buffer_dist + expected_cube_size, suly + buffer_dist: suly+buffer_dist + expected_cube_size].reshape(-1)
-    if np.isnan(np.sum(gather)):
+    gather = layer_data[sulx+buffer_dist: sulx+buffer_dist+expected_cube_size,
+                        suly+buffer_dist: suly+buffer_dist+expected_cube_size].reshape(-1)
+    if len(gather) < expected_cube_size*expected_cube_size:
+        print("caught")
+        return False
+    if np.isnan(gather).any():
         return False
     if buffer_ignore in gather:
         return False
@@ -125,8 +129,8 @@ def compile_legal_samples(expected_cube_size, layer_data, y_base, base_res, dime
     sample_res_factor = dimension_override / base_res[y_base]
 
     ### subtract the buffer dist...
-    override_shape = (int((guide_layer_shape[0] - (2*buffer_dist[y_base])) / sample_res_factor),
-                      int((guide_layer_shape[1] - (2*buffer_dist[y_base])) / sample_res_factor))
+    override_shape = (int(((guide_layer_shape[0] - (2*buffer_dist[y_base])) / sample_res_factor)),
+                      int(((guide_layer_shape[1] - (2*buffer_dist[y_base])) / sample_res_factor)))
 
     #base_scaled_crs = (layer_crs[y_base][0], layer_crs[y_base][1], layer_crs[y_base][2] * sample_res_factor, layer_crs[y_base][3] * sample_res_factor)
     ### TODO -- rename if this works
@@ -148,8 +152,13 @@ def compile_legal_samples(expected_cube_size, layer_data, y_base, base_res, dime
             ### within this sample region, check each cube for missing data etc
             for k in range(len(base_res)):
                 ### check individual layer for nodata/NaN values within sample region
-                layer_k_np = roundup_layer_1a(k, (i + buffer_dist[y_base],j + buffer_dist[y_base]), buffer_fill[k], layer_crs, y_base, layer_nodata[k], expected_cube_size[k],
-                                              layer_data[k], buffer_dist[k], half_offset[k], center_offset[k], base_scaled_crs)
+                """layer_k_np = roundup_layer_1a(k, (i + buffer_dist[y_base], j + buffer_dist[y_base]), buffer_fill[k],
+                                              layer_crs, y_base, layer_nodata[k], expected_cube_size[k], layer_data[k],
+                                              buffer_dist[k], half_offset[k], center_offset[k], base_scaled_crs)"""
+                ### option without buffer dist...
+                layer_k_np = roundup_layer_1a(k, (i, j), buffer_fill[k],
+                                              layer_crs, y_base, layer_nodata[k], expected_cube_size[k], layer_data[k],
+                                              buffer_dist[k], half_offset[k], center_offset[k], base_scaled_crs)
                 ### if one layer is missing data, we have a problem
                 if not layer_k_np:
                     all_ok = False
@@ -157,9 +166,12 @@ def compile_legal_samples(expected_cube_size, layer_data, y_base, base_res, dime
             ### if all layers are ok within sample area, this is a legal sample
             if all_ok:
                 legal_sample_idx_list.append((i, j))
+            else:
+                falsecount += 1
     print("- rounded up layers: ", len(legal_sample_idx_list))
     print("  - sampling at override dimension: ", dimension_override, " with factor: ", sample_res_factor)
     print("  - maximum legal samples = ", override_shape[0] * override_shape[1])
+    print("  -", falsecount, "rejected (" + str(falsecount/(override_shape[0]*override_shape[1])) + ")")
     return legal_sample_idx_list, override_shape, sample_res_factor
 
 ### save list of legal samples for future use
@@ -725,12 +737,12 @@ def make_pyramid_layer(pyparams):
     ### pixels
     if sample_to_res == expected_cube_size:
         roundup_active = roundup_layer_2
-        print("-", k, "running roundup 2a")
+        print("-", k, "running roundup 2")
     ### use roundup 3a if we need to sample at a non-native resolution
     ### this requires drawing grid at sampling resolution, more costly
     else:
         roundup_active = roundup_layer_3
-        print("- running roundup 3a")
+        print("- running roundup 3")
 
     ### deal with sampling dims...?
     ### iterate over legal samples
@@ -781,7 +793,7 @@ def make_pyramid_layer(pyparams):
 ### TODO -- what does this do
 def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size, dimension_override,
                        legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, n_splits, layer_data,
-                       train_fold_indices, sample_to_res, buffer_dist, half_offset, center_offset, parallel):
+                       train_fold_indices, sample_to_res, buffer_dist, half_offset, center_offset, parallel, lowmem):
 
     print("- set up h5 datasets")
 
@@ -803,6 +815,10 @@ def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size, d
     for i in range(len(layer_data)):
         samples_mins.append(float("inf"))
         samples_maxs.append(float("-inf"))
+
+    if lowmem:
+        ### we reloaded the layers without buffer so... no need to do anything with buffer distances..!!!
+        buffer_dist = [0 for ii in range(len(buffer_dist))]
 
     ### set up parameters to pass cleanly to make_pyramid_layer in parallel (just reformatting arguments above)
     pyramid_params = []
@@ -848,12 +864,14 @@ def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size, d
     print("- saved min/max normalization parameters")
     print("- done")
 
+
 ### should always return a 2d np array... previously roundup_layer_2a
 def roundup_layer_2(k, base_idx, crs_list, yloc, layer_data, expected_cube_size, buffer_dist, half_offset,
                     center_offset, sample_to_res):
     ### this is legal sample id without buffer offset
     bi, bj = base_idx
     ### so this operation is ok (no buffer offset)
+    ### getting the geographic center of this grid square...
     geo_ctr = idx_geo(bi + 0.5, bj + 0.5, crs_list[yloc])
     if k == yloc and expected_cube_size == 1:
         ### account for buffer offset in layer file
@@ -893,6 +911,7 @@ def roundup_layer_3(k, base_idx, crs_list, yloc, layer_data, expected_cube_size,
         ### this is ok because geo_ctr is without buffer offset
         tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
         result = np.zeros((sample_to_res, sample_to_res))
+        ### TODO -- rethink?
         ### account for buffer offset here, before resampling this time
         sulx = int(tidi + half_offset - 0.5) + buffer_dist - center_offset
         suly = int(tidj + half_offset - 0.5) + buffer_dist - center_offset

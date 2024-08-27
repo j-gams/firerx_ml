@@ -269,7 +269,7 @@ if __name__ == "__main__":
         cpf.make_pyramids_main(base_res, fold_name, h5_chunk_size, expected_cube_size, dimension_override,
                            legal_sample_idx_list, layer_crs, y_base, test_indices, buffer_fill, partition_n_splits,
                            layer_data, train_fold_indices, expected_sample_to, buffer_dist, half_offset,
-                           center_offset, parallelize)
+                           center_offset, parallelize, low_memory_mode)
         print("- total psutil process memory (GB):", psutil.virtual_memory()[3] / 1000000000)
     else:
         print("- all done without reaching checkpoint")

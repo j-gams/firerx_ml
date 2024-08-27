@@ -1,0 +1,1 @@
+{"core": {"verbosity": 2, "model_dicts_locs": ["../models/configs/c2_mid.json"], "override_existing_dir": false}}
