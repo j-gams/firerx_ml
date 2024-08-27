@@ -65,6 +65,8 @@ for i in range(len(frame_models_configs_locs)):
     elif frame_override_existing_dir and os.path.exists(model_dir):
         if train_params["mode"] == "train":
             os.system("rm " + model_dir + "/*")
+    else:
+        os.system("mkdir " + model_dir)
 
     ### TODO -- move config to folder
     os.system("cp " + models_configs_locs + " " + model_dir + "/")
