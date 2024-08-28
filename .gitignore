@@ -1,0 +1,9 @@
+data/aligned_raster/*
+data/diagnostic/*
+data/extent/*
+data/ml_sets/*
+data/raw_raster/*
+data/reprojected_raster/*
+models/logs/*
+models/trained/*
+
