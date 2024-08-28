@@ -73,7 +73,7 @@ for i in range(len(frame_models_configs_locs)):
 
     ### load metadata
     metadata_cols = []
-    with open(data_root_dir + "/info.txt", 'r') as infofile:
+    with open(data_root_dir + "info.txt", 'r') as infofile:
         metadata_total = infofile.read().replace('\n', ';')
     metadata_lines = metadata_total.split(";")
     metadata = []
