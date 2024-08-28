@@ -21,7 +21,7 @@ if __name__ == "__main__":
     ### DEAL WITH PARAMETERS, CONFIG FILES...
     config_dir = "configs/"
     config_prefix = "dbci_"
-    config_name = "default_config"
+    config_name = "default_config_ml"
     if len(sys.argv) > 2 and sys.argv[2][:6] == "config":
         config_name = sys.argv[2][7:]
     config_loc = config_dir + config_prefix + config_name + ".json"

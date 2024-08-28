@@ -19,7 +19,6 @@ def compute_expected_cube_sizes(y_layer_max, cube_res):
             expected_cube_size.append(1)
         else:
             expected_cube_size.append(y_layer_max // cube_res[i] + 1)
-    print("- computed expected cube sizes: ", expected_cube_size)
     return expected_cube_size
 
 ### make buffer around smaller data layers
@@ -88,7 +87,7 @@ def idx_geo(ix, iy, geopack): #ulh, ulv, psh, psv):
 ### determine whether a sample is legal
 ### legality requires no missing data in the sample area
 def roundup_layer_1a(k, base_idx, buffer_ignore, crs_list, y_base, nd_vals, expected_cube_size,
-                    layer_data, buffer_dist, half_offset, center_offset, base_scaled_crs):
+                    layer_data, buffer_dist, half_offset, center_offset, base_scaled_crs, extraroom=1):
     ### retrieve sample-resolution coordinates
     ### these ids are wrt guiding UL (no buffer offset)
     bi, bj = base_idx
@@ -103,10 +102,9 @@ def roundup_layer_1a(k, base_idx, buffer_ignore, crs_list, y_base, nd_vals, expe
     sulx = int(tidi + half_offset) - center_offset
     suly = int(tidj + half_offset) - center_offset
     ###
-    gather = layer_data[sulx+buffer_dist: sulx+buffer_dist+expected_cube_size,
-                        suly+buffer_dist: suly+buffer_dist+expected_cube_size].reshape(-1)
+    gather = layer_data[sulx+buffer_dist: sulx+buffer_dist+expected_cube_size+extraroom,
+                        suly+buffer_dist: suly+buffer_dist+expected_cube_size+extraroom].reshape(-1)
     if len(gather) < expected_cube_size*expected_cube_size:
-        print("caught")
         return False
     if np.isnan(gather).any():
         return False
@@ -742,7 +740,7 @@ def make_pyramid_layer(pyparams):
     ### this requires drawing grid at sampling resolution, more costly
     else:
         roundup_active = roundup_layer_3
-        print("- running roundup 3")
+        print("-", k, "running roundup 3")
 
     ### deal with sampling dims...?
     ### iterate over legal samples
@@ -818,6 +816,7 @@ def make_pyramids_main(cube_res, fold_name, h5_chunk_size, expected_cube_size, d
 
     if lowmem:
         ### we reloaded the layers without buffer so... no need to do anything with buffer distances..!!!
+        print("- adjusting buffers for low memory mode!")
         buffer_dist = [0 for ii in range(len(buffer_dist))]
 
     ### set up parameters to pass cleanly to make_pyramid_layer in parallel (just reformatting arguments above)
@@ -898,10 +897,10 @@ def roundup_layer_3(k, base_idx, crs_list, yloc, layer_data, expected_cube_size,
     bi, bj = base_idx
     ### so this equation is ok (no buffer)
     geo_ctr = idx_geo(bi + 0.5, bj + 0.5, crs_list[yloc])
-    if k == yloc and expected_cube_size == 1:
+    if k == yloc and sample_to_res == 1:
         ### account for buffer offset in layer file
         return layer_data[[[bi+buffer_dist]], [[bj+buffer_dist]]]
-    elif expected_cube_size == 1:
+    elif sample_to_res == 1:
         ### this is again ok because geo_ctr is without buffer offset
         tidi, tidj = geo_idx(geo_ctr[0], geo_ctr[1], crs_list[k])
         ### account for buffer offset in layer file here
@@ -913,12 +912,18 @@ def roundup_layer_3(k, base_idx, crs_list, yloc, layer_data, expected_cube_size,
         result = np.zeros((sample_to_res, sample_to_res))
         ### TODO -- rethink?
         ### account for buffer offset here, before resampling this time
-        sulx = int(tidi + half_offset - 0.5) + buffer_dist - center_offset
-        suly = int(tidj + half_offset - 0.5) + buffer_dist - center_offset
-        iterstep = (2 * (center_offset - half_offset) + 1) / (sample_to_res - 1)
-        for i in range(sample_to_res):
-            for j in range(sample_to_res):
-                result[i, j] = layer_data[int(sulx + i*iterstep), int(suly + j*iterstep)]
+        sulx = int(tidi + half_offset) - center_offset
+        suly = int(tidj + half_offset) - center_offset
+        iterstep = expected_cube_size / sample_to_res
+        try:
+            for i in range(sample_to_res):
+                for j in range(sample_to_res):
+                    result[i, j] = layer_data[int(sulx + i*iterstep) + buffer_dist, int(suly + j*iterstep) + buffer_dist]
+        except:
+            print("ERROR -", k)
+            for i in range(sample_to_res):
+                for j in range(sample_to_res):
+                    result[i, j] = layer_data[int(sulx + i*iterstep) + buffer_dist, int(suly + j*iterstep) + buffer_dist]
         return result
 
 def save_info_file(data_info, expected_sample_to, fold_name, n_splits, buffer_fill, data_input_crs,

@@ -129,7 +129,7 @@ if __name__ == "__main__":
         dimension_override = base_res[y_base]
 
     ### set sampling resolution to min meter dimension (max resolution)
-    if data_mode == "cube":
+    if data_mode == "cube" or data_mode == "adjust":
         for idx in x_layers:
             sample_to_res[idx] = min_x
 
@@ -185,11 +185,13 @@ if __name__ == "__main__":
     ### need to compute regardless of checkpoint
     print("computing expected cube sizes and sampling sizes")
     expected_cube_size = cpf.compute_expected_cube_sizes(dimension_override, base_res)
+    print("- computed expected cube sizes: ", expected_cube_size)
     expected_sample_to = cpf.compute_expected_cube_sizes(dimension_override, sample_to_res)
+    print("- computed expected sampling resolutions: ", expected_sample_to)
     ### adjust sampling resolution of cube to approximately some factor of pyramid resolution?
     if data_mode == "adjust":
-        print("adjusting expected sampling sizes")
         expected_sample_to = cpf.reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers, cube_reduce_dim_factor)
+        print("- adjusting expected sampling resolutions to", expected_sample_to)
     ### save info file
     cpf.save_info_file(data_info, expected_sample_to, fold_name, partition_n_splits, buffer_fill, data_input_crs, np_random_seed)
     ### make a buffer around data layers to avoid going out of bounds... involves resizing data
