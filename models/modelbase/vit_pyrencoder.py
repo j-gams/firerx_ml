@@ -286,7 +286,7 @@ class multi_vit:
             y_hats_i = self.base_model(val_data[i][0])
             if self.singletask is not None:
                 y_hats_i = [y_hats_i]
-                #print(y_hats_i.shape)
+                # print(y_hats_i.shape)
             ### iterate over y layers
             for j in range(len(val_data.use_y_ids)):
                 for elty in ys_i[j]:
@@ -294,12 +294,8 @@ class multi_vit:
                 for elth in y_hats_i[j]:
                     yhats[j].append(elth)
 
-        print(yhats[0][0].shape)
-        print(len(yhats))
-        print(len(yhats[0]))
-
         for i in range(len(val_data.use_y_ids)):
-            yhats[i] = np.array(yhats[i])[:, :, :]#yhats[i] = np.array(yhats[i])[:, :, :, 0]
+            yhats[i] = np.array(yhats[i])[:, :, :, 0]
             ys[i] = np.array(ys[i])
             print("shape sanity check", i, "-", yhats[i].shape, ys[i].shape)
 
