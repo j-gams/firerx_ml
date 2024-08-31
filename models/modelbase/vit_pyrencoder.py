@@ -11,7 +11,7 @@ from tensorflow import map_fn as tfmap_fn
 from tensorflow import gather_nd as tfgather_nd
 from tensorflow.nn import gelu
 
-from modelbase import mltools
+from modelbase import mltools as mlt
 
 import math
 import pickle
@@ -114,7 +114,7 @@ class multi_vit:
         self.base_model = None
 
     def make_base_model(self, ldims, yoff, n_patches, projection_dim, n_heads, t_layers, mlp_units,
-                        output_mode, single_task=False):
+                        output_mode, single_task=False, pdims_out=None, y_layer_names=None):
         ### split y layers and x layers
         xdims = ldims[:yoff]
         ydims = ldims[yoff:]
@@ -192,72 +192,19 @@ class multi_vit:
 
         ### now append the mlp
         # mlp = mlp(rep1, hidden_units, dropout_rate)
-        for units in mlp_units:
-            working_mdl = keras.layers.Dense(units, activation=gelu)(working_mdl)
-            working_mdl = keras.layers.Dropout(0.5)(working_mdl)
+        fc = mlt.dense_block(working_mdl, mlp_units)
 
+        unique_layer_dims, y_unique, unique_freq, y_freq = pdims_out
+
+        y_split_out = mlt.y_block(fc, ydims, y_unique, y_freq, y_layer_names,
+                                  output_mode, single_task)
         ### it goes... 0: agb 1: wue 2 esi
 
         ### wue esi agb
-        output_layers = []
-        if single_task is None:
-            if output_mode == "combine":
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2) * 2, activation="relu")(working_mdl)
-                output_branch_1 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(working_mdl)
 
-                output_branch_1 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(output_branch_1)
-                output_1 = keras.layers.Reshape((ydims[2], ydims[2]), name="out_"+str(ydims[2]))(output_branch_1)
-
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2) * 2, activation="relu")(output_branch_0)
-                output_branch_0 = keras.layers.Concatenate([output_branch_0, output_branch_1])
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2) * 2 + (ydims[2] ** 2), activation="relu")(output_branch_0)
-
-                output_0a = keras.layers.Dense(ydims[0] ** 2, activation="relu")(output_branch_0)
-                output_0b = keras.layers.Dense(ydims[1] ** 2, activation="relu")(output_branch_1)
-
-                output_0a = keras.layers.Reshape((ydims[0], ydims[0]), name="out_"+str(ydims[0]) + "_0")(output_0a)
-                output_0b = keras.layers.Reshape((ydims[1], ydims[1]), name="out_" + str(ydims[1]) + "_1")(output_0b)
-
-                output_layers = [output_0a, output_0b, output_1]
-            elif output_mode == "inverse":
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2) * 2, activation="relu")(working_mdl)
-                output_branch_1 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(working_mdl)
-
-                output_branch_1 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(output_branch_1)
-                output_1 = keras.layers.Reshape((ydims[2], ydims[2]), name="out_" + str(ydims[2]))(output_branch_1)
-
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2) * 2, activation="relu")(output_branch_0)
-
-                output_0a = keras.layers.Dense(ydims[0] ** 2, activation="relu")(output_branch_0)
-                output_0b = keras.layers.Dense(ydims[1] ** 2, activation="relu")(output_branch_1)
-
-                output_0a = keras.layers.Reshape((ydims[0], ydims[0]), name="out_" + str(ydims[0]) + "_0")(output_0a)
-                output_0b = keras.layers.Reshape((ydims[1], ydims[1]), name="out_" + str(ydims[1]) + "_1")(output_0b)
-
-                output_layers = [output_0a, output_0b, output_1]
-            elif output_mode == "separate":
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2), activation="relu")(working_mdl)
-                output_branch_1 = keras.layers.Dense((ydims[1] ** 2), activation="relu")(working_mdl)
-                output_branch_2 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(working_mdl)
-
-                output_branch_0 = keras.layers.Dense((ydims[0] ** 2), activation="relu")(output_branch_1)
-                output_branch_1 = keras.layers.Dense((ydims[1] ** 2), activation="relu")(output_branch_1)
-                output_branch_2 = keras.layers.Dense((ydims[2] ** 2), activation="relu")(output_branch_1)
-
-                output_0 = keras.layers.Reshape((ydims[0], ydims[0]), name="out_" + str(ydims[0]) + "_0")(output_branch_0)
-                output_1 = keras.layers.Reshape((ydims[1], ydims[1]), name="out_" + str(ydims[1]) + "_1")(output_branch_1)
-                output_2 = keras.layers.Reshape((ydims[2], ydims[2]), name="out_" + str(ydims[2]) + "_2")(output_branch_2)
-
-                output_layers = [output_0, output_1, output_2]
-        else:
-            output_single = keras.layers.Dense((ydims[single_task] ** 2), activation="relu")(working_mdl)
-            output_single = keras.layers.Dense((ydims[single_task] ** 2), activation="relu")(output_single)
-            output_single = keras.layers.Reshape((ydims[single_task], ydims[single_task]), name="out_" + str(ydims[single_task]))(output_single)
-
-            output_layers = output_single
 
         print("finished setting up")
-        return keras.models.Model(inputs=input_layers, outputs=output_layers)
+        return keras.models.Model(inputs=input_layers, outputs=y_split_out)
 
     def setup(self, model_params, model_dir, model_name,
                             verbosity, cb_params):
@@ -276,28 +223,34 @@ class multi_vit:
         self.projection_dim = model_params["proj_dim"]
         self.n_heads = model_params["n_heads"]
         self.t_layers = model_params["n_heads"]
-        self.mlp_units = model_params["mlp_units"]
-        self.output_mode = model_params["output_mode"]
+        self.mlp_units = model_params["dense_layers"]
+        self.output_mode = model_params["output_block"]
         self.singletask = model_params["singletask"]
+
+        y_layer_names = model_params["layer_names"][self.y_ids[0]:]
+
+        pdims_out = mlt.process_dims(self.layer_dims, self.x_ids, self.y_ids)
 
         print(self.x_ids, self.y_ids)
         #n_patches, projection_dim, n_heads, t_layers, mlp_units, output_mode, single_task=False
         self.base_model = self.make_base_model(self.layer_dims, self.y_ids[0], n_patches=self.n_patches,
                                                projection_dim=self.projection_dim, n_heads=self.n_heads,
                                                t_layers=self.t_layers, mlp_units=self.mlp_units,
-                                               output_mode=self.output_mode, single_task=self.singletask)
+                                               output_mode=self.output_mode, single_task=self.singletask,
+                                               pdims_out=pdims_out, y_layer_names=y_layer_names)
         print("compiling...")
-        self.base_model.compile(loss=self.training_loss)
+        opt = keras.optimizers.Adam(learning_rate=model_params["learning_rate"])
+        self.base_model.compile(loss=self.training_loss, optimizer=opt, metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
         if self.v > 0:
             print(self.base_model.summary())
         self.callbacks = []
         for cb_name in cb_params:
             if cb_name == "loss":
-                self.callbacks.append(mltools.lossCallback())
+                self.callbacks.append(mlt.lossCallback())
             elif cb_name == "checkpoint":
                 self.callbacks.append(
                     keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".h5",
-                                                       monitor="val_mean_squared_error",
+                                                       monitor="val_loss",
                                                        verbose=self.v, mode="min",
                                                        save_best_only=True, save_freq="epoch",
                                                        save_weights_only=True))

@@ -7,6 +7,7 @@ import time
 from modelbase import mltools as mlt
 from modelbase.cascade_late_a import model_cascade2_late_a
 from modelbase.cascade_mid import model_cascade2_mid
+from modelbase.cascade_early import model_cascade2_early
 from modelbase.vit_pyrencoder import multi_vit
 
 import os
@@ -39,7 +40,7 @@ def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
         if model_params["model_type"] == "f1_cube_cnn":
             working_model = None
         if model_params["model_type"] == "c2_early":
-            working_model = None
+            working_model = model_cascade2_early()
         if model_params["model_type"] == "c2_mid":
             working_model = model_cascade2_mid()
         if model_params["model_type"] == "c2_late_a":

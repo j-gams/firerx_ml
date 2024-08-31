@@ -151,7 +151,7 @@ class model_cascade2_mid:
                 self.callbacks.append(mlt.lossCallback())
             elif cb_name == "checkpoint":
                 self.callbacks.append(tf.keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".h5",
-                                                                 monitor="val_mean_squared_error",
+                                                                 monitor="val_loss",
                                                                  verbose=self.v, mode="min",
                                                                  save_best_only=True, save_freq="epoch",
                                                                  save_weights_only=True))

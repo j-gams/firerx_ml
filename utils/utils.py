@@ -129,6 +129,7 @@ if sys.argv[1] == "make_dbci_config":
                                                "input_func": "align_tif", "avg_func": "align_avg", "avg_method": "mean",
                                                "base_res": 30, "output_res": 70, "resample_res": 10,
                                                "override_input_proj": False},
+
                                                 ### below here we have non-conus layers (ESI, slope/aspect/srtm)
                                               {"loc": "colorado_esi_2022.tif", "name": "ECOSTRESS_ESI_22",
                                                "base_res": 70, "output_res": 70, "resample_res": 10,
@@ -341,7 +342,7 @@ if sys.argv[1] == "make_mldata_config":
     mldata_loc = "../manage_data/configs/" + mldata_name + ".json"
     print("writing default mldata alignment config to", mldata_loc)
 
-    mldata_dict = {"core": {"mode": "adjust", ### {pyramid, cube, adjust}
+    mldata_dict = {"core": {"mode": "pyramid", ### {pyramid, cube, adjust}
                             "run_name_suffix_default": "_lf22",
                             "run_name_prefix": "../data/ml_sets/",
                             "low_memory_mode": True},
@@ -361,7 +362,7 @@ if sys.argv[1] == "make_mldata_config":
                               "np_random_seed": 201951,
                               "h5_chunk_size": 1000,
                               "parallelize": True,
-                              "base_layer": 21},
+                              "base_layer": 17},
 
                    "data": {"data_info": [{"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/SRTM_01_mean_4326_0_0.tif",
                                            "name": "SRTM", "base_res": 30, "xy": "x", "index": 0,
@@ -382,7 +383,6 @@ if sys.argv[1] == "make_mldata_config":
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/LANDFIRE_EVT_22_mode_4326_0_0.tif",
                                            "name": "EVT2022", "base_res": 30, "xy": "x", "index": 5,
                                            "type": "categoric"},
-
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/LANDFIRE_CC_22_mean_4326_0_0.tif",
                                            "name": "CC2022", "base_res": 30, "xy": "x", "index": 6,
                                            "type": "numeric"},
@@ -391,36 +391,36 @@ if sys.argv[1] == "make_mldata_config":
                                            "type": "numeric"},
 
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_PRECIP_30_mean_4326_0_0.tif",
-                                           "name": "Precip", "base_res": 800, "xy": "x", "index": 12,
+                                           "name": "Precip", "base_res": 800, "xy": "x", "index": 8,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_TEMPMIN_30_mean_4326_0_0.tif",
-                                           "name": "TempMIN", "base_res": 800, "xy": "x", "index": 13,
+                                           "name": "TempMIN", "base_res": 800, "xy": "x", "index": 9,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_TEMPMEAN_30_mean_4326_0_0.tif",
-                                           "name": "TempMEAN", "base_res": 800, "xy": "x", "index": 14,
+                                           "name": "TempMEAN", "base_res": 800, "xy": "x", "index": 10,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_TEMPMAX_30_mean_4326_0_0.tif",
-                                           "name": "TempMAX", "base_res": 800, "xy": "x", "index": 15,
+                                           "name": "TempMAX", "base_res": 800, "xy": "x", "index": 11,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_VAPORMIN_30_mean_4326_0_0.tif",
-                                           "name": "VaporMIN", "base_res": 800, "xy": "x", "index": 16,
+                                           "name": "VaporMIN", "base_res": 800, "xy": "x", "index": 12,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/PRISM_VAPORMAX_30_mean_4326_0_0.tif",
-                                           "name": "VaporMAX", "base_res": 800, "xy": "x", "index": 17,
+                                           "name": "VaporMAX", "base_res": 800, "xy": "x", "index": 13,
                                            "type": "numeric"},
 
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/TREEAGE_mean_4326_0_0.tif",
-                                           "name": "StandAge", "base_res": 1000, "xy": "x", "index": 18,
+                                           "name": "StandAge", "base_res": 1000, "xy": "x", "index": 14,
                                            "type": "numeric"},
 
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/ECOSTRESS_WUE_22_4326_0_0.tif",
-                                           "name": "ECOSTRESSWUE", "base_res": 70, "xy": "y", "index": 19,
+                                           "name": "ECOSTRESSWUE", "base_res": 70, "xy": "y", "index": 15,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/ECOSTRESS_ESI_22_4326_0_0.tif",
-                                           "name": "ECOSTRESSESI", "base_res": 70, "xy": "y", "index": 20,
+                                           "name": "ECOSTRESSESI", "base_res": 70, "xy": "y", "index": 16,
                                            "type": "numeric"},
                                           {"loc": "../data/aligned_raster/colorado_ml_lf22/reprojected/GEDI_AGB_4326_0_0.tif",
-                                           "name": "GEDIAGB", "base_res": 1000, "xy": "y", "index": 21,
+                                           "name": "GEDIAGB", "base_res": 1000, "xy": "y", "index": 17,
                                            "type": "numeric"},
                                           ],
                             "test_subset": []}}
@@ -436,7 +436,7 @@ if sys.argv[1] == "make_mlframe_config":
     print("writing default ci alignment config to", mlframe_loc)
 
     mlframe_dict = {"core": {"verbosity": 2,
-                             "model_dicts_locs": ["../models/configs/c2_mid.json"],#["../models/configs/multi_vit.json"],#
+                             "model_dicts_locs": ["../models/configs/multi_vit.json"],#["../models/configs/multi_vit.json"],#
                              "override_existing_dir": False},
                     }
 
@@ -453,14 +453,14 @@ if sys.argv[1] == "make_model_config":
     modelconf_loc = "../models/configs/" + model_type + ".json"
     print("writing default ci alignment config to", modelconf_loc)
 
-    ### cascade_late (1)
-    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_final",
+    """### cascade_late (1)
+    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/cube_lf22/",
                                    "make_vis": None,
                                    "train_params":  {"mode": "train", ### {load, loadtrain, train}
                                                      "batch_size": 1000,
                                                      "run_on_folds": [0],
-                                                     "n_epochs_default": 1,
-                                                     "verbosity": 1,
+                                                     "n_epochs_default": 150,
+                                                     "verbosity": 2,
                                                      "workers": 0,
                                                      "multip": True,
                                                      "callbacks": ["loss", "checkpoint"],
@@ -470,24 +470,24 @@ if sys.argv[1] == "make_model_config":
                                                     },
                                    },
 
-                    "model_params": {"model_type": "c2_mid", ### f1 (baseline) c2_early c2_mid c2_late_a c2_late_b
-                                     "model_dir": "trained/" + model_type + "_pyramid",
-                                     "model_name": "cascade_late_1",
+                    "model_params": {"model_type": "c2_early", ### f1 (baseline) c2_early c2_mid c2_late_a c2_late_b
+                                     "model_dir": "trained/" + model_type + "_cube",
+                                     "model_name": "cascade_early_1",
                                      "hyperparams": {"dense_layers": [1600, 1600, 1600],
-                                                     "learning_rate": 0.0001,
+                                                     "learning_rate": 0.0005,
                                                      "single_task": None,
                                                      "monitor_loss": True,
                                                      "training_loss": "mse",
                                                      "output_block": "cascade"}
                                      },
-                    }
+                    }"""
     ### multi vit
-    """mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_final",
+    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
                                    "make_vis": None,
                                    "train_params": {"mode": "train",  ### {load, loadtrain, train}
                                                     "batch_size": 1000,
                                                     "run_on_folds": [0],
-                                                    "n_epochs_default": 2,
+                                                    "n_epochs_default": 1,
                                                     "verbosity": 1,
                                                     "workers": 0,
                                                     "multip": True,
@@ -500,20 +500,19 @@ if sys.argv[1] == "make_model_config":
 
                     "model_params": {"model_type": "vit",  ### f1 (baseline) c2_early c2_mid c2_late_a c2_late_b vit
                                      "model_dir": "trained/" + model_type + "_pyramid",
-                                     "model_name": "cascade_late_1",
+                                     "model_name": "vit_pyramid_1",
                                      "hyperparams": {"training_loss": "mse",
                                                      "monitor_loss": True,
                                                      "n_patches": [4, 5, 6],
-                                                     "proj_dim": 36,
+                                                     "proj_dim": 16,
                                                      "n_heads": 6,
                                                      "t_layers": 6,
-                                                     "mlp_units": [1000, 1000],
-                                                     "output_mode": "inverse",
+                                                     "dense_layers": [1600, 1600, 1600],
                                                      "singletask": None,
-                                                     "learning_rate": 0.0001,
+                                                     "learning_rate": 0.0005,
                                                      "output_block": "cascade"}
                                      },
-                    }"""
+                    }
 
     make_config(mlframe_dict, modelconf_loc)
     print("done making config")

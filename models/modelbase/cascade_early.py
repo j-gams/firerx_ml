@@ -5,7 +5,7 @@ import pickle
 import math
 from modelbase import mltools as mlt
 
-class TensorAddLayer(tf.keras.layers.Layer):
+class TensorTileLayer(tf.keras.layers.Layer):
     def __init__(self, adims, bdims):
         super().__init__()
         self.factor = math.ceil(adims / bdims)
@@ -49,29 +49,40 @@ class model_cascade2_early:
         for j in range(len(unique_dims_sorted)):
             if unique_dims_sorted[j] <= 2:
                 ### 2 -> 1
-                convs2[j] = tf.keras.layers.Conv2D(filters=2 * model_params["to_freq"], kernel_size=(1, 1), strides=(1, 1),
+                convs2[j] = tf.keras.layers.Conv2D(filters=2 * sfreq[j], kernel_size=(1, 1), strides=(1, 1),
                                    padding="same")(convs2[j])
                 # convdims[j] = 1
             else:
                 ### 1st conv
                 ### 34 -> 32
                 ### or 27 -> 25
-                convs2[j] = tf.keras.layers.Conv2D(filters=2 * model_params["to_freq"], kernel_size=(3, 3), strides=(1, 1),
+                convs2[j] = tf.keras.layers.Conv2D(filters=2 * sfreq[j], kernel_size=(3, 3), strides=(1, 1),
                                    padding="valid")(convs2[j])
                 conv_dims[j] -= 2
 
         ### step 3.5 - do special layer...
         evariant_workdim = max(conv_dims)
-        etemp = [convs2[2]]
-        if len(sfreq) > 1:
+        #etemp = [convs2[2]]
+        for j in range(len(sfreq)):
+            if conv_dims[j] == max(conv_dims):
+                pass
+            else:
+                deconv_k = max(conv_dims) - conv_dims[j] + 1
+                convs2[j] = tf.keras.layers.Conv2DTranspose(filters=2*sfreq[j], kernel_size=(deconv_k, deconv_k),
+                                                            strides=(1, 1), padding="valid")(convs2[j])
+                conv_dims[j] = max(conv_dims)
+        """if len(sfreq) > 1:
             ## adim bdim [inputa, inputb]
-            etemp.append(tf.keras.layers.TensorAddLayer(32, 1)([convs2[2], convs2[0]]))
-            etemp.append(tf.keras.layers.TensorAddLayer(32, 2)([convs2[2], convs2[1]]))
-        else:
-            print("uhoh")
+            ### big deconv to do this... in version a
+            
+            etemp.append(tf.keras.layers.Conv2DTranspose(filters=2*model_params["to_freq"], kernel_size=())())
+            #etemp.append(TensorAddLayer(32, 1)([convs2[2], convs2[0]]))
+            #etemp.append(TensorAddLayer(32, 2)([convs2[2], convs2[1]]))"""
+        """else:
+            print("uhoh")"""
         sfreq = [sum(sfreq)]
-        convdims = [conv_dims[2]]
-        convs2[0] = tf.keras.layers.Concatenate(axis=3)(etemp)
+        conv_dims = [max(conv_dims)]
+        convs2[0] = tf.keras.layers.Concatenate(axis=3)(convs2)
 
         ### step 4
         for j in range(len(sfreq)):
@@ -85,7 +96,7 @@ class model_cascade2_early:
             ### 32 -> 16
             ### or 25 -> 13
             convs2[j] = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(convs2[j])
-            convdims[j] = math.ceil(convdims[j] / 2)
+            conv_dims[j] = math.ceil(conv_dims[j] / 2)
 
         ### step 6
         for j in range(len(sfreq)):
@@ -93,7 +104,7 @@ class model_cascade2_early:
             ### 16 -> 6 and 13 -> 5
             convs2[j] = tf.keras.layers.Conv2D(filters=16 * sfreq[j], kernel_size=(3, 3), strides=(3, 3),
                                padding="same")(convs2[j])
-            convdims[j] = math.ceil(convdims[j] / 3)
+            conv_dims[j] = math.ceil(conv_dims[j] / 3)
 
         ### step 7
         for j in range(len(sfreq)):
@@ -101,7 +112,7 @@ class model_cascade2_early:
             ### 6 -> 2 and 5 -> 2
             convs2[j] = tf.keras.layers.Conv2D(filters=16 * frequency[j], kernel_size=(3, 3), strides=(3, 3),
                                padding="same")(convs2[j])
-            convdims[j] = math.ceil(convdims[j] / 3)
+            conv_dims[j] = math.ceil(conv_dims[j] / 3)
 
         ### step 11 conv and flatten
         convs2[0] = tf.keras.layers.Conv2D(filters=16 * len(xdims), kernel_size=(2, 2), strides=(2, 2),
@@ -154,7 +165,7 @@ class model_cascade2_early:
                 self.callbacks.append(mlt.lossCallback())
             elif cb_name == "checkpoint":
                 self.callbacks.append(tf.keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".h5",
-                                                                 monitor="val_mean_squared_error",
+                                                                 monitor="val_loss",
                                                                  verbose=self.v, mode="min",
                                                                  save_best_only=True, save_freq="epoch",
                                                                  save_weights_only=True))
