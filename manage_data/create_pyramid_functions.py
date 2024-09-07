@@ -33,16 +33,22 @@ def make_buffer(buffer_fill, layer_data, cube_res, dimension_override):
 def reduce_from_total_dims(expected_cube_size, expected_sample_to, x_layers, reduce_factor):
     ### certainly a smarter way to do this but the point is to mirror the total number of params
     ### in the data pyramid but in a cube
-    total_params_cube = 0
+    total_params_pyr = 0
     total_params_sample = 0
     for i in range(len(expected_sample_to)):
         if i in x_layers:
-            total_params_cube += expected_cube_size[i] ** 2
+            total_params_pyr += expected_cube_size[i] ** 2
             total_params_sample += expected_sample_to[i] ** 2
-    ratio = math.sqrt(total_params_cube / total_params_sample)
+    ratio = math.sqrt(total_params_pyr / total_params_sample)
+    new_params_0 = len(x_layers) * ((int(expected_sample_to[0] * ratio * reduce_factor)) ** 2)
+    new_params_1 = len(x_layers) * ((int(expected_sample_to[0] * ratio * reduce_factor) + 1) ** 2)
+    if abs(new_params_0 - total_params_pyr) < abs(new_params_1 - total_params_pyr):
+        addon = 0
+    else:
+        addon = 1
     for i in range(len(expected_sample_to)):
         if i in x_layers:
-            expected_sample_to[i] = int(expected_sample_to[i] * ratio * reduce_factor)
+            expected_sample_to[i] = int(expected_sample_to[i] * ratio * reduce_factor) + addon
     print("- reduced sampling dimension to match natural total parameters:", expected_sample_to[0])
     print("- using reduction factor:", reduce_factor)
     print("- new sample dimensions: ", expected_sample_to)

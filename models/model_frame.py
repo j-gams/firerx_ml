@@ -58,13 +58,17 @@ for i in range(len(frame_models_configs_locs)):
     model_parameters = model_config_i["model_params"]
 
     ### directory setup
-    if not frame_override_existing_dir and os.path.exists(model_dir):
+    if not frame_override_existing_dir and os.path.exists(model_dir) and train_params["mode"] == "train":
         print("model already exists!")
         print("exiting...")
         sys.exit(0)
     elif frame_override_existing_dir and os.path.exists(model_dir):
         if train_params["mode"] == "train":
             os.system("rm " + model_dir + "/*")
+    elif train_params["mode"] == "loadtrain" or train_params["mode"] == "load":
+        print("loading existing model...")
+    elif train_params["mode"] == "test":
+        print("testing existing model...")
     else:
         os.system("mkdir " + model_dir)
 

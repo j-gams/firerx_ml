@@ -1,1 +1,1 @@
-{"core": {"verbosity": 2, "model_dicts_locs": ["../models/configs/multi_vit.json"], "override_existing_dir": false}}
+{"core": {"verbosity": 2, "model_dicts_locs": ["../models/configs/f2_baseline.json"], "override_existing_dir": false}}

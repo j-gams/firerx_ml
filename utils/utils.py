@@ -342,7 +342,7 @@ if sys.argv[1] == "make_mldata_config":
     mldata_loc = "../manage_data/configs/" + mldata_name + ".json"
     print("writing default mldata alignment config to", mldata_loc)
 
-    mldata_dict = {"core": {"mode": "pyramid", ### {pyramid, cube, adjust}
+    mldata_dict = {"core": {"mode": "adjust", ### {pyramid, cube, adjust}
                             "run_name_suffix_default": "_lf22",
                             "run_name_prefix": "../data/ml_sets/",
                             "low_memory_mode": True},
@@ -436,7 +436,7 @@ if sys.argv[1] == "make_mlframe_config":
     print("writing default ci alignment config to", mlframe_loc)
 
     mlframe_dict = {"core": {"verbosity": 2,
-                             "model_dicts_locs": ["../models/configs/multi_vit.json"],#["../models/configs/multi_vit.json"],#
+                             "model_dicts_locs": ["../models/configs/f2_baseline.json"],
                              "override_existing_dir": False},
                     }
 
@@ -453,8 +453,8 @@ if sys.argv[1] == "make_model_config":
     modelconf_loc = "../models/configs/" + model_type + ".json"
     print("writing default ci alignment config to", modelconf_loc)
 
-    """### cascade_late (1)
-    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/cube_lf22/",
+    ## cascade_late (1)
+    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/adjust_lf22/",
                                    "make_vis": None,
                                    "train_params":  {"mode": "train", ### {load, loadtrain, train}
                                                      "batch_size": 1000,
@@ -470,9 +470,9 @@ if sys.argv[1] == "make_model_config":
                                                     },
                                    },
 
-                    "model_params": {"model_type": "c2_early", ### f1 (baseline) c2_early c2_mid c2_late_a c2_late_b
-                                     "model_dir": "trained/" + model_type + "_cube",
-                                     "model_name": "cascade_early_1",
+                    "model_params": {"model_type": "f2_baseline", ### f2 (baseline) c2_early c2_mid c2_late_a c2_late_b
+                                     "model_dir": "trained/" + model_type + "_adjust",
+                                     "model_name": "f2_baseline_1",
                                      "hyperparams": {"dense_layers": [1600, 1600, 1600],
                                                      "learning_rate": 0.0005,
                                                      "single_task": None,
@@ -480,8 +480,9 @@ if sys.argv[1] == "make_model_config":
                                                      "training_loss": "mse",
                                                      "output_block": "cascade"}
                                      },
-                    }"""
+                    }
     ### multi vit
+    """
     mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
                                    "make_vis": None,
                                    "train_params": {"mode": "train",  ### {load, loadtrain, train}
@@ -512,7 +513,7 @@ if sys.argv[1] == "make_model_config":
                                                      "learning_rate": 0.0005,
                                                      "output_block": "cascade"}
                                      },
-                    }
+                    }"""
 
     make_config(mlframe_dict, modelconf_loc)
     print("done making config")

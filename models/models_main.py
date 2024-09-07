@@ -9,6 +9,7 @@ from modelbase.cascade_late_a import model_cascade2_late_a
 from modelbase.cascade_mid import model_cascade2_mid
 from modelbase.cascade_early import model_cascade2_early
 from modelbase.vit_pyrencoder import multi_vit
+from modelbase.cube_cnn import model_flat2
 
 import os
 from data_handler import data_wrangler
@@ -37,8 +38,8 @@ def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
         ###
         if model_params["model_type"] == "vit":
             working_model = multi_vit()
-        if model_params["model_type"] == "f1_cube_cnn":
-            working_model = None
+        if model_params["model_type"] == "f2_baseline":
+            working_model = model_flat2()
         if model_params["model_type"] == "c2_early":
             working_model = model_cascade2_early()
         if model_params["model_type"] == "c2_mid":
@@ -64,8 +65,8 @@ def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
                 print("done fitting model")
             if train_params["save_model"]:
                 working_model.save()
-            if train_params["compute_metrics"]:
-                computed_metrics.append(mlt.compute_metrics(working_model, val_wrangler, train_params["metrics_params"]))
+        if train_params["compute_metrics"]:
+            computed_metrics.append(mlt.compute_metrics(working_model, val_wrangler, train_params["metrics_params"]))
        #print(working_model.callbacks[0].logs["loss"])
     time_delta = time.process_time() - setup_start_time
     print("reformatting metrics...")

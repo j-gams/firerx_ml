@@ -1,58 +1,55 @@
-from tensorflow import keras
+import tensorflow as tf
 import numpy as np
 import pickle
+from modelbase import mltools as mlt
 
 ### MODEL: Flat 2
 class model_flat2:
     def __init__(self):
         self.base_model = None
 
-    def make_base_model(self, ldims, yoff, uniquedimssorted, freq, ydims_unique, ydims_freq):
+    def make_base_model(self, ldims, yoff, uniquedimssorted, freq, ydims_unique, ydims_freq, model_params):
         xdims = ldims[:yoff]
         ydims = ldims[yoff:]
         inputs = []
         convs = []
         for i in range(len(xdims)):
-            inputs.append(keras.models.Input(shape=(xdims[i], xdims[i], 1)))
+            inputs.append(tf.keras.layers.Input(shape=(xdims[i], xdims[i], 1)))
 
-        c1 = keras.models.Concatenate(axis=3)(inputs)
+        c1 = tf.keras.layers.Concatenate(axis=3)(inputs)
         ### 34 -> 32 or 27 -> 25
-        c1 = keras.models.Conv2D(filters=40, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
+        c1 = tf.keras.layers.Conv2D(filters=30, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
         ### 32 -> 30 or 25 -> 23
-        c1 = keras.models.Conv2D(filters=80, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
+        c1 = tf.keras.layers.Conv2D(filters=60, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
         ### 30 -> 28 or 23 -> 21
-        c1 = keras.models.Conv2D(filters=157, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
+        c1 = tf.keras.layers.Conv2D(filters=157, kernel_size=(3, 3), strides=(1, 1), padding="valid")(c1)
         ### 30 -> 15 or 23 -> 12
-        c1 = keras.models.Conv2D(filters=304, kernel_size=(3, 3), strides=(2, 2), padding="same")(c1)
+        c1 = tf.keras.layers.Conv2D(filters=304, kernel_size=(3, 3), strides=(2, 2), padding="same")(c1)
         ### 15 -> 8 or 12 -> 6
-        c1 = keras.models.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(c1)
+        c1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(c1)
 
         ### 8 -> 4 or 6 -> 3
-        c1 = keras.models.Conv2D(filters=304, kernel_size=(3, 3), strides=(2, 2), padding="same")(c1)
+        c1 = tf.keras.layers.Conv2D(filters=304, kernel_size=(3, 3), strides=(2, 2), padding="same")(c1)
         ### 4 -> 2 or 3 -> 2
-        c1 = keras.models.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(c1)
-        merge = keras.models.Flatten()(c1)
-        c2 = keras.models.Dense(1600, activation="relu")(merge)
-        c2 = keras.models.Dense(1800, activation="relu")(c2)
-        c2 = keras.models.Dense(1600, activation="relu")(c2)
+        c1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(c1)
+        merge = tf.keras.layers.Flatten()(c1)
+        ### step 12 -- dense layers
+        merge = mlt.dense_block(merge, model_params["dense_layers"])
+        print(ydims, ydims_unique, ydims_freq)
+        ### step 13 -- output block
+        ### input_layer, y_dims, y_unique, y_frequency, y_names, block_version, single_task
+        y_split_out = mlt.y_block(merge, ydims, ydims_unique, ydims_freq, model_params["layer_names"][yoff:],
+                                  model_params["output_block"], model_params["single_task"])
 
-        y1a = keras.models.Dense((1 ** 2) * 1, activation="relu")(c2)
-        y2a = keras.models.Dense((15 ** 2) * 2, activation="relu")(c2)
+        if self.v != 0:
+            print("finished setting up")
+        return tf.keras.models.Model(inputs=inputs, outputs=y_split_out)
 
-        y1b = keras.models.Reshape((1, 1, 1), name="agb")(y1a)
-        y2b = keras.models.Dense(15 ** 2, activation="relu")(y2a)
-        y2c = keras.models.Reshape((15, 15, 1), name="wue")(y2b)
-        y2d = keras.models.Dense(15 ** 2, activation="relu")(y2a)
-        y2e = keras.models.Reshape((15, 15, 1), name="esi")(y2d)
-        yfinal = [y2c, y2e, y1b]
-
-        return keras.models.Model(inputs=inputs, outputs=yfinal)
-
-    def setup(self, model_params, model_name):
-        self.v = model_params["verbosity"]
-        self.layer_dims = model_params["layerdims"]
+    def setup(self, model_params, model_dir, model_name, verbosity, cb_params):
+        self.v = verbosity
+        self.layer_dims = model_params["layer_dims"]
         self.name = model_name
-        self.modeldir = model_params["dir"]
+        self.modeldir = model_dir
         self.x_ids = model_params["x_layers"]
         self.y_ids = model_params["y_layers"]
 
@@ -63,38 +60,29 @@ class model_flat2:
         unique_ydims = []
         # layer_cat = []
 
-        ### TODO - make this not dumb
-        for i in range(len(self.layer_dims)):
-            if i in self.x_ids and self.layer_dims[i] not in unique_layer_dims:
-                unique_layer_dims.append(self.layer_dims[i])
-            if i in self.y_ids and self.layer_dims[i] not in unique_ydims:
-                unique_ydims.append(self.layer_dims[i])
-        sort_unique = list(unique_layer_dims)
-        sort_unique.sort()
-        unique_freq = [0 for ii in range(len(sort_unique))]
-        unique_ydims.sort()
-        unique_yfreq = [0 for ii in range(len(unique_ydims))]
-        for i in range(len(self.layer_dims)):
-            if i in self.x_ids:
-                for j in range(len(sort_unique)):
-                    if self.layer_dims[i] == sort_unique[j]:
-                        unique_freq[j] += 1
-            else:
-                for j in range(len(unique_ydims)):
-                    if self.layer_dims[i] == unique_ydims[j]:
-                        unique_yfreq[j] += 1
+        unique_layer_dims, y_unique, unique_freq, y_freq = mlt.process_dims(self.layer_dims, self.x_ids, self.y_ids)
 
         self.base_model = self.make_base_model(self.layer_dims, self.y_ids[0], unique_layer_dims,
-                                               unique_freq, unique_ydims, unique_yfreq)
-        self.base_model.compile(loss=self.training_loss)
+                                               unique_freq, y_unique, y_freq, model_params)
+        opt = tf.keras.optimizers.Adam(learning_rate=model_params["learning_rate"])
+        self.base_model.compile(loss=tf.keras.losses.MeanSquaredError(), optimizer=opt,
+                                metrics=[tf.keras.metrics.MeanSquaredError(), tf.keras.metrics.MeanAbsoluteError()])
+
         if self.v > 0:
             print(self.base_model.summary())
-        callback1 = keras.models.lossCallback()
-        callback2 = keras.models.ModelCheckpoint(self.modeldir + "/chkpt_" + self.name + ".h5",
-                                    monitor = "val_mean_squared_error", verbose=2, mode="min",
-                                    save_best_only=True, save_freq="epoch", save_weights_only=True)
-        self.callbacks = [callback1]#, callback2]
-        print("done setting up")
+        self.callbacks = []
+        for cb_name in cb_params:
+            if cb_name == "loss":
+                self.callbacks.append(mlt.lossCallback())
+            elif cb_name == "checkpoint":
+                self.callbacks.append(
+                    tf.keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".h5",
+                                                       monitor="val_loss",
+                                                       verbose=self.v, mode="min",
+                                                       save_best_only=True, save_freq="epoch",
+                                                       save_weights_only=True))
+        if self.v > 0:
+            print("done setting up")
 
     def load(self):
         self.base_model.load_weights(self.modeldir + "/model_" + self.name + ".h5")
@@ -102,10 +90,10 @@ class model_flat2:
             picklelog = pickle.load(cblog)
         self.callbacks[0].resume_from_load(picklelog)
 
-    def fit(self, train_data, val_data, n_epochs):
+    def fit(self, train_data, val_data, n_epochs, n_workers, multip):
         print("fitting...")
         self.base_model.fit(train_data, callbacks=self.callbacks, epochs=n_epochs, validation_data=val_data,
-                            verbose=2)
+                            verbose=self.v, workers=n_workers, use_multiprocessing=multip)
 
     def predict(self, val_data):
         ### iterate over y layers
