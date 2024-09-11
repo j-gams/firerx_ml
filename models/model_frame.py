@@ -67,8 +67,8 @@ for i in range(len(frame_models_configs_locs)):
             os.system("rm " + model_dir + "/*")
     elif train_params["mode"] == "loadtrain" or train_params["mode"] == "load":
         print("loading existing model...")
-    elif train_params["mode"] == "test":
-        print("testing existing model...")
+    elif train_params["mode"] == "test_1":
+        print("testing existing model (1) ...")
     else:
         os.system("mkdir " + model_dir)
 

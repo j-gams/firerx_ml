@@ -175,8 +175,8 @@ def reformat_metrics(in_metrics, metrics_params, y_layers):
 
     return ref_metrics
 
-def save_metrics(computed_metrics, wmdir):
-    with open(wmdir + "/metrics.txt", "wb") as metric_out:
+def save_metrics(computed_metrics, wmdir, model_mode):
+    with open(wmdir + "/metrics" + model_mode + ".txt", "wb") as metric_out:
         pickle.dump(computed_metrics, metric_out)
 
 def process_dims(layer_dims, x_ids, y_ids):
