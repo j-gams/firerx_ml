@@ -69,7 +69,16 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
 
             y_final = [yj2a, yj2b, yj2]
         elif block_version == "basic":
-            pass
+            yj2 = tf.keras.layers.Dense((y_unique[1] ** 2) * y_frequency[1], activation="relu")(y_split[0])
+            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2)
+            yj2a = tf.keras.layers.Reshape((y_dims[0], y_dims[0], 1), name=y_names[0])(yj2a)
+
+            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2)
+            yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
+
+            yj2c = tf.keras.layers.Dense((y_unique[0] ** 2), activation="relu")(y_split[1])
+            yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
+            y_final = [yj2a, yj2b, yj2c]
 
     return y_final
 

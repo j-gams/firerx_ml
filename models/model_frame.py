@@ -30,6 +30,8 @@ frame_models_configs_locs = frame_config["core"]["model_dicts_locs"]
 frame_verbosity = frame_config["core"]["verbosity"]
 frame_override_existing_dir = frame_config["core"]["override_existing_dir"]
 
+print(frame_models_configs_locs)
+
 for i in range(len(frame_models_configs_locs)):
     ### OVERVIEW
     ### - load config
@@ -48,6 +50,7 @@ for i in range(len(frame_models_configs_locs)):
 
     ### data
     data_root_dir = model_config_i["run_params"]["data_root_dir"]
+    data_low_mem = model_config_i["run_params"]["data_low_mem"]
 
     ### run params
     train_params = model_config_i["run_params"]["train_params"]
@@ -108,12 +111,15 @@ for i in range(len(frame_models_configs_locs)):
     ### setup data wranglers
     train_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
                                    train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
-                                   layer_info["y_layers"])
+                                   layer_info["y_layers"], low_mem=data_low_mem)
     val_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
                                  train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
-                                 layer_info["y_layers"])
+                                 layer_info["y_layers"], low_mem=data_low_mem)
 
     ml.setup_train_model(train_params, train_wrangler, val_wrangler, model_parameters)
+
+    del train_wrangler.h5_data
+    del val_wrangler.h5_data
 
 
 

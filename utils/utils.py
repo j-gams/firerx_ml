@@ -436,7 +436,8 @@ if sys.argv[1] == "make_mlframe_config":
     print("writing default ci alignment config to", mlframe_loc)
 
     mlframe_dict = {"core": {"verbosity": 2,
-                             "model_dicts_locs": ["../models/configs/c2_mid.json"],
+                             "model_dicts_locs": ["../models/configs/c2_late_a.json",
+                                                  "../models/configs/multi_vit.json"],
                              "override_existing_dir": False},
                     }
 
@@ -454,12 +455,13 @@ if sys.argv[1] == "make_model_config":
     print("writing default ci alignment config to", modelconf_loc)
 
     ## cascade_late (1)
-    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/adjust_lf22/",
+    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
+                                   "data_low_mem": False, ## set to false for faster but more memory
                                    "make_vis": None,
                                    "train_params":  {"mode": "train", ### {load, loadtrain, train}
                                                      "batch_size": 1000,
                                                      "run_on_folds": [0],
-                                                     "n_epochs_default": 150,
+                                                     "n_epochs_default": 1,
                                                      "verbosity": 2,
                                                      "workers": 0,
                                                      "multip": True,
@@ -470,26 +472,27 @@ if sys.argv[1] == "make_model_config":
                                                     },
                                    },
 
-                    "model_params": {"model_type": "c2_mid", ### f2 (baseline) c2_early c2_mid c2_late_a c2_late_b
-                                     "model_dir": "trained/" + model_type + "_adjust",
-                                     "model_name": "cascade_mid_1",
-                                     "hyperparams": {"dense_layers": [1600, 1600, 1600],
+                    "model_params": {"model_type": "c2_late_a", ### f2 (baseline) c2_early c2_mid c2_late_a c2_late_b
+                                     "model_dir": "trained/" + model_type + "_pyramid",
+                                     "model_name": "cascade_late_a_8_10_8",
+                                     "hyperparams": {"dense_layers": [800, 1000, 800],
                                                      "learning_rate": 0.0005,
                                                      "single_task": None,
                                                      "monitor_loss": True,
                                                      "training_loss": "mse",
-                                                     "output_block": "cascade"}
+                                                     "output_block": "basic"} ### cascade basic
                                      },
                     }
     ### multi vit
-    """
-    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
+
+    """mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
+                                   "data_low_mem": False,
                                    "make_vis": None,
                                    "train_params": {"mode": "train",  ### {load, loadtrain, train}
                                                     "batch_size": 1000,
                                                     "run_on_folds": [0],
-                                                    "n_epochs_default": 1,
-                                                    "verbosity": 1,
+                                                    "n_epochs_default": 300,
+                                                    "verbosity": 2,
                                                     "workers": 0,
                                                     "multip": True,
                                                     "callbacks": ["loss", "checkpoint"],
@@ -508,10 +511,10 @@ if sys.argv[1] == "make_model_config":
                                                      "proj_dim": 16,
                                                      "n_heads": 6,
                                                      "t_layers": 6,
-                                                     "dense_layers": [1600, 1600, 1600],
+                                                     "dense_layers": [800, 1000, 800],
                                                      "singletask": None,
                                                      "learning_rate": 0.0005,
-                                                     "output_block": "cascade"}
+                                                     "output_block": "basic"}
                                      },
                     }"""
 

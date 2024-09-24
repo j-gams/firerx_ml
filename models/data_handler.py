@@ -6,7 +6,7 @@ import h5py
 import tensorflow.keras.utils as kr_utils
 
 class data_wrangler (kr_utils.Sequence):
-    def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids):
+    def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, low_mem=True):
         ### handle basic parameters
         self.n_layers = n_layers
         self.buffer_nodata = buffer_nodata
@@ -18,6 +18,7 @@ class data_wrangler (kr_utils.Sequence):
         self.mode = "train"
         self.train_fold = 0
         self.n_folds = n_folds
+        self.low_memory = low_mem
 
         ### load h5 data
         self.layer_locs = []
@@ -25,8 +26,11 @@ class data_wrangler (kr_utils.Sequence):
         self.h5_data = []
         for i in range(n_layers):
             self.layer_locs.append(rootdir + "/layer_"+str(i)+".h5")
-            self.h5_src.append(h5py.File(self.layer_locs[i],'r'))
+            self.h5_src.append(h5py.File(self.layer_locs[i], 'r'))
             self.h5_data.append(self.h5_src[i]["data"])
+        if not self.low_memory:
+            for i in range(n_layers):
+                self.h5_data[i] = np.array(self.h5_data[i])
 
         ### load index data
         self.test_index = np.genfromtxt(rootdir + "/test.csv", delimiter=',')
