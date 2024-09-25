@@ -47,11 +47,12 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
         ysplit2 = tf.keras.layers.Reshape((y_dims[single_task], y_dims[single_task], 1), name=y_names[single_task])(y_split)
         associated_dim = y_dims[single_task]
     else:
-        for j in range(len(y_unique)):
-            yj = tf.keras.layers.Dense((y_unique[j] ** 2) * y_frequency[j], activation="relu")(input_layer)
-            y_split.append(yj)
-        associated_dim = []
+
+        #associated_dim = []
         if block_version == "cascade":
+            for j in range(len(y_unique)):
+                yj = tf.keras.layers.Dense((y_unique[j] ** 2) * y_frequency[j], activation="relu")(input_layer)
+                y_split.append(yj)
             ### hard coded for now...
             ### ecostress branch
             yj2i = tf.keras.layers.Concatenate()(y_split)
@@ -69,14 +70,20 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
 
             y_final = [yj2a, yj2b, yj2]
         elif block_version == "basic":
-            yj2 = tf.keras.layers.Dense((y_unique[1] ** 2) * y_frequency[1], activation="relu")(y_split[0])
+            yj = tf.keras.layers.Dense((max(y_unique) ** 2) * 3, activation="relu")(input_layer)
+
+            ### ecostress
+            yj2 = tf.keras.layers.Dense((max(y_unique) ** 2) * y_frequency[1], activation="relu")(yj)
+            ### wue
             yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2)
             yj2a = tf.keras.layers.Reshape((y_dims[0], y_dims[0], 1), name=y_names[0])(yj2a)
 
+            ### esi
             yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2)
             yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
 
-            yj2c = tf.keras.layers.Dense((y_unique[0] ** 2), activation="relu")(y_split[1])
+            yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
+            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu")(yj)
             yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
             y_final = [yj2a, yj2b, yj2c]
 
