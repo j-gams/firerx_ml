@@ -6,4 +6,5 @@ data/raw_raster/*
 data/reprojected_raster/*
 models/logs/*
 models/trained/*
+models/trained_lf22_standage/*
 vizualize/*
