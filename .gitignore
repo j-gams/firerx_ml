@@ -6,4 +6,4 @@ data/raw_raster/*
 data/reprojected_raster/*
 models/logs/*
 models/trained/*
-
+vizualize/*
