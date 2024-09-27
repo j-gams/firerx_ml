@@ -91,13 +91,30 @@ class model_cascade2_mid:
                 conv_dims[j] = math.ceil(conv_dims[j] / 2)
 
         ### step 9
-        if len(conv_dims) > 1:
+        """if len(conv_dims) > 1:
             convdims = [2, 2, 2]
             convs2[0] = [convs2[0], convs2[1], convs2[2]]
             sfreq[0] = frequency[0] + frequency[1] + frequency[2]
-            convs2[0] = tf.keras.layers.Concatenate(axis=3)(convs2[0])
-        else:
-            print("nodims")
+            convs2[0] = tf.keras.layers.Concatenate(axis=3)(convs2[0])"""
+
+        t_conv_dims = []
+        t_convs2 = []
+        t_freq = []
+        for i in range(len(conv_dims)):
+            if conv_dims[i] not in t_conv_dims:
+                t_conv_dims.append(conv_dims[i])
+                t_convs2.append([convs2[i]])
+                t_freq.append(frequency[i])
+            else:
+                t_convs2[-1].append(convs2[i])
+                t_freq[-1] += frequency[i]
+        conv_dims = t_conv_dims
+        convs2 = t_convs2
+        sfreq = t_freq
+
+        ### step 8 -- concat
+        for j in range(len(conv_dims)):
+            convs2[j] = tf.keras.layers.Concatenate(axis=3)(convs2[j])
 
         ### step 11 conv and flatten
         convs2[0] = tf.keras.layers.Conv2D(filters=16 * len(xdims), kernel_size=(2, 2), strides=(2, 2),

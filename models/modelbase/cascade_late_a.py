@@ -22,6 +22,7 @@ class model_cascade2_late_a:
             print(frequency)
 
         conv_dims = list(unique_dims_sorted)
+        #temp_dims = list(conv_dims)
         sfreq = list(frequency)
 
         ### step 1 - gather layers into groups
@@ -93,18 +94,37 @@ class model_cascade2_late_a:
         if self.v != 0:
             print("convolutional dims...", conv_dims)
         run_concat = False
-        if len(conv_dims) > 1:
-            conv_dims = [1, 2]
-            convs2[1] = [convs2[1], convs2[2]]
+        t_conv_dims = []
+        t_convs2 = []
+        t_freq = []
+        for i in range(len(conv_dims)):
+            if conv_dims[i] not in t_conv_dims:
+                t_conv_dims.append(conv_dims[i])
+                t_convs2.append([convs2[i]])
+                t_freq.append(frequency[i])
+            else:
+                t_convs2[-1].append(convs2[i])
+                t_freq[-1] += frequency[i]
+        conv_dims = t_conv_dims
+        convs2 = t_convs2
+        sfreq = t_freq
+        run_concat = True
+
+        """if len(conv_dims) > 1:
+            conv_dims = []
+            ##conv_dims = [1, 2]
+            if len(conv_dims) > 2:
+                ##convs2[1] = [convs2[1], convs2[2]]
             sfreq[1] = frequency[1] + frequency[2]
-            run_concat = True
+            run_concat = True"""
 
         ### step 8 -- concat
         for j in range(len(conv_dims)):
-            if conv_dims[j] == 2 and run_concat:
+            convs2[j] = tf.keras.layers.Concatenate(axis=3)(convs2[j])
+            """if conv_dims[j] == 2 and run_concat:
                 convs2[j] = tf.keras.layers.Concatenate(axis=3)(convs2[j])
             else:
-                print("step 8:", j, conv_dims[j])
+                print("step 8:", j, conv_dims[j])"""
 
         ### step 9 -- conv
         for j in range(len(conv_dims)):

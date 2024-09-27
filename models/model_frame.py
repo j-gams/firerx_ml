@@ -29,6 +29,7 @@ print("loaded config file")
 frame_models_configs_locs = frame_config["core"]["model_dicts_locs"]
 frame_verbosity = frame_config["core"]["verbosity"]
 frame_override_existing_dir = frame_config["core"]["override_existing_dir"]
+frame_override_epochs = frame_config["core"]["override_epochs"]
 
 print(frame_models_configs_locs)
 
@@ -107,6 +108,9 @@ for i in range(len(frame_models_configs_locs)):
         print(elt)
 
     model_parameters["hyperparams"] = model_parameters["hyperparams"] | layer_info
+    if frame_override_epochs != -1:
+        print("overrideing to", frame_override_epochs, "epochs")
+        train_params["n_epochs_default"] = frame_override_epochs
 
     ### setup data wranglers
     train_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
