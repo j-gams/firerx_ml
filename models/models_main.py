@@ -73,7 +73,7 @@ def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
             if train_params["save_model"]:
                 working_model.save()
         if train_params["compute_metrics"]:
-            computed_metrics.append(mlt.compute_metrics(working_model, val_wrangler, train_params["metrics_params"]))
+            computed_metrics.append(mlt.compute_metrics(working_model, val_wrangler, train_params["metrics_params"], make_plts=True))
             if train_params["verbosity"] != 0:
                 print("computed metrics")
        #print(working_model.callbacks[0].logs["loss"])
