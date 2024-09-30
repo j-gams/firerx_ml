@@ -7,4 +7,8 @@ data/reprojected_raster/*
 models/logs/*
 models/trained/*
 models/trained_lf22_standage/*
+frxmodels_v0/logs/*
+frxmodels_v0/trained/*
+frxmodels_v0/trained_lf22_standage/*
 vizualize/*
+*.DS_Store
