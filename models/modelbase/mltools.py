@@ -1,6 +1,6 @@
 import time
 import tensorflow as tf
-#from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 import pickle
 from scipy import stats
@@ -88,7 +88,7 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
         elif block_version == "basic":
             yj = tf.keras.layers.Dense((max(y_unique) ** 2) * 3, activation="relu")(input_layer)
 
-            ### ecostress
+            ### ecostress - wue and esi
             yj2 = tf.keras.layers.Dense((max(y_unique) ** 2) * y_frequency[1], activation="relu")(yj)
             ### wue
             yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2)
@@ -99,9 +99,31 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
             yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
 
             yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
-            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu")(yj)
+            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu")(yj2c)
             yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
             y_final = [yj2a, yj2b, yj2c]
+
+        elif block_version == "basicplus":
+            yj = tf.keras.layers.Dense((max(y_unique) ** 2) * 3, activation="relu")(input_layer)
+
+            ### ecostress
+            yj2 = tf.keras.layers.Dense((max(y_unique) ** 2) * y_frequency[1], activation="relu")(yj)
+            ### wue
+            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2)
+            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2a)
+            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2a)
+            yj2a = tf.keras.layers.Reshape((y_dims[0], y_dims[0], 1), name=y_names[0])(yj2a)
+
+            ### esi
+            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2)
+            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2b)
+            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2b)
+            yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
+
+            yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
+            yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
+            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu")(yj2c)
+            yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
 
     return y_final
 
@@ -167,22 +189,45 @@ def metric_mae(y_predicted, y_actual, mode, granularity):
         print("mse dimensions check", dimcheck)
     return ret
 
-def metric_r2(y_predicted, y_actual, mode):
+def metric_r2(y_predicted, y_actual, mode, make_plts, model_name):
     r_values = []
+    nbins = 200
+    #histos = []
+    y_names = [["Water Use Efficiency", "wue"],
+               ["Evaporative Stress Index", "esi"],
+               ["Above Ground Biomass", "agb"]]
+    if make_plts:
+        fig, axes = plt.subplots(1, len(y_names), figsize=(12, 4))
     for i in range(len(y_predicted)):
         if mode == "geo":
             y_actual[i] = y_actual[i].flatten()
             y_predicted[i] = y_predicted[i].flatten()
         slope, intercept, r_value, p_value, std_err = stats.linregress(y_actual[i], y_predicted[i])
         r_values.append(r_value)
+        if make_plts:
+            histo_i = np.histogram2d(y_actual[i], y_predicted[i], bins=nbins, 
+                                     range=[[0,1], [0,1]])[0].transpose()
+            histo_i = np.log10(histo_i)
+            binned_i = axes[i].imshow(histo_i, origin='lower', extent=[0,1,0,1])
+            x_bf = np.linspace(0, 1, 100)
+            y_bf = (x_bf * slope) + intercept
+            bestfit_i = axes[i].plot(x_bf, y_bf, label='$R^{2}=$' + str(round(r_value, 3)), 
+                                     color="red", alpha=0.2)
+            axes[i].legend(loc='lower right')
+            axes[i].set(xlabel="True Value", title=y_names[i][0])
+            axes[i].set(ylabel="Predicted Value")
+            fig.colorbar(binned_i, ax=axes[i], aspect=20)
+    if make_plts:
+        axes[i].set(title="Predicted Values Versus True Values: " + model_name + "\n" + y_names[1][0])
+        plt.savefig("../visualize/y_yhat_train/" + model_name + "_log.png")
     return r_values
 
-def compute_metrics(working_model, val_wrangler, metrics_params):
+def compute_metrics(working_model, val_wrangler, metrics_params, make_plts=False):
     metric_layer = {}
     y_actual, y_predicted = working_model.predict(val_wrangler)
     metric_layer["mse"] = metric_mse(y_predicted, y_actual, "geo", metrics_params)
     metric_layer["mae"] = metric_mae(y_predicted, y_actual, "geo", metrics_params)
-    metric_layer["r2"] = metric_r2(y_predicted, y_actual, "geo")
+    metric_layer["r2"] = metric_r2(y_predicted, y_actual, "geo", make_plts, working_model.name)
     return metric_layer
 
 
