@@ -103,27 +103,32 @@ def y_block(input_layer, y_dims, y_unique, y_frequency, y_names, block_version, 
             yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
             y_final = [yj2a, yj2b, yj2c]
 
-        elif block_version == "basicplus":
+        elif block_version == "basicnorm":
             yj = tf.keras.layers.Dense((max(y_unique) ** 2) * 3, activation="relu")(input_layer)
 
             ### ecostress
             yj2 = tf.keras.layers.Dense((max(y_unique) ** 2) * y_frequency[1], activation="relu")(yj)
             ### wue
             yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2)
-            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2a)
-            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2a)
-            yj2a = tf.keras.layers.Reshape((y_dims[0], y_dims[0], 1), name=y_names[0])(yj2a)
+            #yj2a = tf.keras.layers.BatchNormalization()(yj2a)
+            #yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu")(yj2a)
+            yj2a = tf.keras.layers.Dense((y_dims[0] ** 2), activation="relu", name=y_names[0])(yj2a)
+            #yj2a = tf.keras.layers.Reshape((y_dims[0], y_dims[0], 1), name=y_names[0])(yj2a)
 
             ### esi
             yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2)
-            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2b)
-            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2b)
-            yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
+            #yj2b = tf.keras.layers.BatchNormalization()(yj2b)
+            #yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu")(yj2b)
+            yj2b = tf.keras.layers.Dense((y_dims[1] ** 2), activation="relu", name=y_names[1])(yj2b)
+            #yj2b = tf.keras.layers.Reshape((y_dims[1], y_dims[1], 1), name=y_names[1])(yj2b)
 
+            ### agb
             yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
-            yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj)
-            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu")(yj2c)
-            yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
+            #yj2c = tf.keras.layers.BatchNormalization()(yj2c)
+            yj2c = tf.keras.layers.Dense((max(y_unique) ** 2), activation="relu")(yj2c)
+            yj2c = tf.keras.layers.Dense((y_dims[2] ** 2), activation="relu", name=y_names[2])(yj2c)
+            #yj2c = tf.keras.layers.Reshape((y_dims[2], y_dims[2], 1), name=y_names[2])(yj2c)
+            y_final = [yj2a, yj2b, yj2c]
 
     return y_final
 
@@ -139,13 +144,13 @@ def metric_mse(y_predicted, y_actual, mode, granularity):
                     ret[j].append(mse)
                 if granularity[j] == "overall":
                     ret[j].append(mse.mean())
-        elif mode == "flatten":
-            mse = (y_predicted[i][:, :, :, 0] - y_actual[i]) ** 2
+        elif mode == "flattened":
+            mse = (y_predicted[i] - y_actual[i]) ** 2
             for j in range(len(granularity)):
                 if granularity[j] == "single":
-                    ret[j].append(mse.mean(axis=(1, 2)).flatten())
+                    ret[j].append(mse.mean(axis=1))
                 if granularity[j] == "each":
-                    ret[j].append(mse.flatten())
+                    ret[j].append(mse)
                 if granularity[j] == "overall":
                     ret[j].append(mse.mean())
         dimcheck = []
@@ -170,13 +175,13 @@ def metric_mae(y_predicted, y_actual, mode, granularity):
                     ret[j].append(mae)
                 if granularity[j] == "overall":
                     ret[j].append(mae.mean())
-        elif mode == "flatten":
-            mae = np.abs(y_predicted[i][:,:,:,0] - y_actual[i])
+        elif mode == "flattened":
+            mae = np.abs(y_predicted[i] - y_actual[i])
             for j in range(len(granularity)):
                 if granularity[j] == "single":
-                    ret[j].append(mae.mean(axis=(1, 2)).flatten())
+                    ret[j].append(mae.mean(axis=1))
                 if granularity[j] == "each":
-                    ret[j].append(mae.flatten())
+                    ret[j].append(mae)
                 if granularity[j] == "overall":
                     ret[j].append(mae.mean())
         dimcheck = []
@@ -216,17 +221,17 @@ def metric_r2(y_predicted, y_actual, mode, make_plts, model_name):
             axes[i].legend(loc='lower right')
             axes[i].set(xlabel="True Value", title=y_names[i][0])
             axes[i].set(ylabel="Predicted Value")
-            fig.colorbar(binned_i, ax=axes[i], aspect=20)
+            fig.colorbar(binned_i, ax=axes[i], aspect=20, shrink=0.75)
     if make_plts:
-        axes[i].set(title="Predicted Values Versus True Values: " + model_name + "\n" + y_names[1][0])
+        axes[1].set(title="Predicted Values Versus True Values: " + model_name + "\n" + y_names[1][0])
         plt.savefig("../visualize/y_yhat_train/" + model_name + "_log.png")
     return r_values
 
 def compute_metrics(working_model, val_wrangler, metrics_params, make_plts=False):
     metric_layer = {}
     y_actual, y_predicted = working_model.predict(val_wrangler)
-    metric_layer["mse"] = metric_mse(y_predicted, y_actual, "geo", metrics_params)
-    metric_layer["mae"] = metric_mae(y_predicted, y_actual, "geo", metrics_params)
+    metric_layer["mse"] = metric_mse(y_predicted, y_actual, "flattened", metrics_params)
+    metric_layer["mae"] = metric_mae(y_predicted, y_actual, "flattened", metrics_params)
     metric_layer["r2"] = metric_r2(y_predicted, y_actual, "geo", make_plts, working_model.name)
     return metric_layer
 
@@ -261,11 +266,10 @@ def process_dims(layer_dims, x_ids, y_ids):
     unique_layer_dims = []
     unique_ydims = []
 
-    ### TODO - make this not dumb, or move to mltools
     for i in range(len(layer_dims)):
-        if i in x_ids and layer_dims[i] not in unique_layer_dims:
+        if i < len(x_ids) and layer_dims[i] not in unique_layer_dims:
             unique_layer_dims.append(layer_dims[i])
-        if i in y_ids and layer_dims[i] not in unique_ydims:
+        elif i >= len(x_ids) and layer_dims[i] not in unique_ydims:
             unique_ydims.append(layer_dims[i])
     sort_unique = list(unique_layer_dims)
     sort_unique.sort()
@@ -273,7 +277,7 @@ def process_dims(layer_dims, x_ids, y_ids):
     unique_ydims.sort()
     unique_yfreq = [0 for ii in range(len(unique_ydims))]
     for i in range(len(layer_dims)):
-        if i in x_ids:
+        if i < len(x_ids):
             for j in range(len(sort_unique)):
                 if layer_dims[i] == sort_unique[j]:
                     unique_freq[j] += 1

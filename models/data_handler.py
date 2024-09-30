@@ -3,10 +3,10 @@
 from osgeo import gdal
 import numpy as np
 import h5py
-import tensorflow.keras.utils as kr_utils
+import keras.utils as kr_utils
 
 class data_wrangler (kr_utils.Sequence):
-    def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, low_mem=True):
+    def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, sample_weights, low_mem=True, **kwargs):
         ### handle basic parameters
         self.n_layers = n_layers
         self.buffer_nodata = buffer_nodata
@@ -18,6 +18,7 @@ class data_wrangler (kr_utils.Sequence):
         self.mode = "train"
         self.train_fold = 0
         self.n_folds = n_folds
+        self.use_sample_weights = sample_weights
         self.low_memory = low_mem
 
         ### load h5 data
@@ -66,6 +67,65 @@ class data_wrangler (kr_utils.Sequence):
 
     def set_fold(self, fold):
         self.train_fold = fold
+
+    def exclude_ids(self, exclude):
+        self.cache_x_ids = list(self.x_ids)
+        self.x_ids = [x_id for x_id in self.x_ids if x_id not in exclude]
+        print("before exclusion", self.cache_x_ids)
+        print("remaining after exclusion", self.x_ids)
+
+    def include_all(self):
+        self.x_ids = self.cache_x_ids
+
+    def load_sample_weights(self, loc, nbins):
+        pass
+
+    def compute_sample_weight(self, mode, nbins, vis=False):
+        self.sample_weights = [[] for ii in range(len(self.use_y_ids))]
+        valuefreqs = []
+        if mode == "real_bininv":
+            print("computing sample weights (real_bininv)...", end="", flush=True)
+            ### iterate over y layers and for each, bin and come up with thresholds
+            #print(self.use_y_ids)
+            for i in range(len(self.use_y_ids)):
+                valuefreq = np.log(np.histogram(self.apply_norm(self.h5_data[self.use_y_ids[i]], self.use_y_ids[i]), bins=nbins, range=[0, 1])[0])
+                #print(valuefreq.shape)
+                if vis:
+                    import matplotlib.pyplot as plt
+                    plt.bar(np.arange(nbins), valuefreq)
+                    plt.title("y variable" + str(i) + "; " + str(sum(valuefreq)))
+                    plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
+                    plt.cla()
+                for j in range(nbins):
+                    if valuefreq[j] == 0:
+                        valuefreq[j] = 1
+                    else:
+                        valuefreq[j] = (self.h5_data[self.use_y_ids[i]].shape[1]**2)/valuefreq[j]
+                temp_max = np.max(valuefreq)
+                for j in range(nbins):
+                    valuefreq[j] /= temp_max
+                valuefreqs.append(np.array(valuefreq))
+                plt.bar(np.arange(nbins), valuefreqs[i])
+                plt.title("y variable" + str(i) + "; " + str(sum(valuefreqs[i])))
+                plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
+                plt.cla()
+            ### values for each class of sample... now map samples to values
+            print("halfway...", end="", flush=True)
+            for i in range(len(self.use_y_ids)):
+                for k in range(len(self.h5_data[self.use_y_ids[i]])):
+                    ### idea 1... sum pixel weights over sample
+                    ### idea 2... know nbins and range... so multiply by nbins, convert to int to get bin number...?
+                    ### get bins, then valuefreqs at locations
+                    self.sample_weights[i].append(np.sum(valuefreqs[i][np.clip((self.apply_norm(self.h5_data[self.use_y_ids[i]][k], self.use_y_ids[i]) * nbins), None, nbins-1).astype(int)]))
+                    #self.sample_weights[i].append(valuefreqs[i][np.clip((self.apply_norm(self.h5_data[self.use_y_ids[i]][k], self.use_y_ids[i]) * nbins), None, nbins-1).astype(int)]) 
+            print("done")
+            for i in range(len(self.use_y_ids)):
+                self.sample_weights[i] = np.array(self.sample_weights[i])
+                print(self.sample_weights[i].shape)
+
+    def set_sample_weights(self, sample_weights):
+        print("confirming set sample weights")
+        self.sample_weights = sample_weights
 
     def shuffle(self):
         if self.mode == "train":
@@ -121,18 +181,25 @@ class data_wrangler (kr_utils.Sequence):
         ### return
         ret_indices = np.sort(self.getindices(idx)).astype(int)
         ### ret x is formatted [layer][batch, i, j]
+        
         ret_x = []
         ret_y = []
         for i in range(len(self.x_ids)):
             ret_x.append(np.zeros((len(ret_indices), self.cube_res[self.x_ids[i]], self.cube_res[self.x_ids[i]])))
         for i in range(len(self.use_y_ids)):
-            ret_y.append(np.zeros((len(ret_indices), self.cube_res[self.use_y_ids[i]], self.cube_res[self.use_y_ids[i]])))
+            ret_y.append(np.zeros((len(ret_indices), self.cube_res[self.use_y_ids[i]] * self.cube_res[self.use_y_ids[i]])))
         for j in range(len(self.x_ids)):
-            ret_x[j][:,:,:] = self.apply_norm(np.array(self.h5_data[self.x_ids[j]][ret_indices, :, :]), self.x_ids[j])
+            ret_x[j][:,:] = self.apply_norm(np.array(self.h5_data[self.x_ids[j]][ret_indices, :, :]), self.x_ids[j])
         for j in range(len(self.use_y_ids)):
-            ret_y[j][:,:,:] = self.apply_norm(np.array(self.h5_data[self.use_y_ids[j]][ret_indices, :, :]), self.use_y_ids[j])
-
-        return ret_x, ret_y
+            ret_y[j][:,:] = self.apply_norm(np.array(self.h5_data[self.use_y_ids[j]][ret_indices, :, :]), self.use_y_ids[j]).reshape((len(ret_indices), -1))
+            #ret_y.append(self.apply_norm(np.array(self.h5_data[self.use_y_ids[j]][ret_indices, :, :]), self.use_y_ids[j]).flatten())
+        if self.use_sample_weights:
+            ret_sw = []
+            for j in range(len(self.use_y_ids)):
+                ret_sw.append(self.sample_weights[j][ret_indices].reshape((len(ret_indices), -1)))
+            #print(self.mode, ret_y[0].shape, ret_sw[0].shape, "*", ret_y[1].shape, ret_sw[1].shape, "*", ret_y[2].shape, ret_sw[2].shape)
+            return tuple(ret_x), tuple(ret_y), tuple(ret_sw)
+        return tuple(ret_x), tuple(ret_y)
 
     def on_epoch_end(self):
         self.shuffle()

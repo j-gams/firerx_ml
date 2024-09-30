@@ -188,7 +188,7 @@ class multi_vit:
             blocks_out.append(representation)
 
         ### combine outputs of each separate encoding size...
-        working_mdl = tfconcat(blocks_out, 1)
+        working_mdl = keras.layers.Concatenate(axis=1)(blocks_out)
 
         ### now append the mlp
         # mlp = mlp(rep1, hidden_units, dropout_rate)
@@ -206,8 +206,7 @@ class multi_vit:
         print("finished setting up")
         return keras.models.Model(inputs=input_layers, outputs=y_split_out)
 
-    def setup(self, model_params, model_dir, model_name,
-                            verbosity, cb_params):
+    def setup(self, model_params, model_dir, model_name, verbosity, cb_params):
         self.name = model_name
         self.x_ids = model_params["x_layers"]
         self.y_ids = model_params["y_layers"]
@@ -227,20 +226,29 @@ class multi_vit:
         self.output_mode = model_params["output_block"]
         self.singletask = model_params["singletask"]
 
-        y_layer_names = model_params["layer_names"][self.y_ids[0]:]
+        y_layer_names = model_params["layer_names"][len(self.x_ids):]
 
         pdims_out = mlt.process_dims(self.layer_dims, self.x_ids, self.y_ids)
 
         print(self.x_ids, self.y_ids)
         #n_patches, projection_dim, n_heads, t_layers, mlp_units, output_mode, single_task=False
-        self.base_model = self.make_base_model(self.layer_dims, self.y_ids[0], n_patches=self.n_patches,
+        self.base_model = self.make_base_model(self.layer_dims, len(self.x_ids), n_patches=self.n_patches,
                                                projection_dim=self.projection_dim, n_heads=self.n_heads,
                                                t_layers=self.t_layers, mlp_units=self.mlp_units,
                                                output_mode=self.output_mode, single_task=self.singletask,
                                                pdims_out=pdims_out, y_layer_names=y_layer_names)
         print("compiling...")
         opt = keras.optimizers.Adam(learning_rate=model_params["learning_rate"])
-        self.base_model.compile(loss=self.training_loss, optimizer=opt, metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
+        self.base_model.compile(loss={'ECOSTRESSWUE':  keras.losses.MeanSquaredError(), 
+                                      'ECOSTRESSESI':  keras.losses.MeanSquaredError(),
+                                      'GEDIAGB': keras.losses.MeanSquaredError()},
+                                loss_weights={'ECOSTRESSWUE': 1.0, 
+                                              'ECOSTRESSESI': 1.0,
+                                              'GEDIAGB': 1.0},
+                                optimizer=opt,
+                                metrics=[keras.metrics.MeanSquaredError(), #tf.keras.metrics.MeanAbsoluteError()])
+                                         keras.metrics.MeanSquaredError(),
+                                         keras.metrics.MeanSquaredError()])
         if self.v > 0:
             print(self.base_model.summary())
         self.callbacks = []
@@ -249,7 +257,7 @@ class multi_vit:
                 self.callbacks.append(mlt.lossCallback())
             elif cb_name == "checkpoint":
                 self.callbacks.append(
-                    keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".h5",
+                    keras.callbacks.ModelCheckpoint(self.modeldir + "/checkpoint_" + self.name + ".weights.h5",
                                                        monitor="val_loss",
                                                        verbose=self.v, mode="min",
                                                        save_best_only=True, save_freq="epoch",
@@ -258,7 +266,7 @@ class multi_vit:
 
 
     def load(self):
-        self.base_model.load_weights(self.modeldir + "/model_" + self.name + ".h5")
+        self.base_model.load_weights(self.modeldir + "/model_" + self.name + ".weights.h5")
         with open(self.modeldir + "/cblog_" + self.name + ".txt", "rb") as cblog:
             picklelog = pickle.load(cblog)
         self.callbacks[0].resume_from_load(picklelog)
@@ -295,7 +303,7 @@ class multi_vit:
                     yhats[j].append(elth)
 
         for i in range(len(val_data.use_y_ids)):
-            yhats[i] = np.array(yhats[i])[:, :, :, 0]
+            yhats[i] = np.array(yhats[i])
             ys[i] = np.array(ys[i])
             print("shape sanity check", i, "-", yhats[i].shape, ys[i].shape)
 
@@ -307,6 +315,6 @@ class multi_vit:
         return ys, yhats
 
     def save(self):
-        self.base_model.save_weights(self.modeldir + "/model_" + self.name + ".h5")
+        self.base_model.save_weights(self.modeldir + "/model_" + self.name + ".weights.h5")
         with open(self.modeldir + "/cblog_" + self.name + ".txt", "wb") as cblog:
             pickle.dump(self.callbacks[0].logs, cblog)

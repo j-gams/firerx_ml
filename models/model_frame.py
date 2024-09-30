@@ -30,8 +30,12 @@ frame_models_configs_locs = frame_config["core"]["model_dicts_locs"]
 frame_verbosity = frame_config["core"]["verbosity"]
 frame_override_existing_dir = frame_config["core"]["override_existing_dir"]
 frame_override_epochs = frame_config["core"]["override_epochs"]
+frame_override_remove_ids = frame_config["core"]["remove_ids"]
 
 print(frame_models_configs_locs)
+
+sample_weights_flag = False
+sample_weights_carry = None
 
 for i in range(len(frame_models_configs_locs)):
     ### OVERVIEW
@@ -107,20 +111,33 @@ for i in range(len(frame_models_configs_locs)):
     for elt in metadata:
         print(elt)
 
-    model_parameters["hyperparams"] = model_parameters["hyperparams"] | layer_info
+    
     if frame_override_epochs != -1:
-        print("overrideing to", frame_override_epochs, "epochs")
+        print("overriding to", frame_override_epochs, "epochs")
         train_params["n_epochs_default"] = frame_override_epochs
 
     ### setup data wranglers
     train_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
                                    train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
-                                   layer_info["y_layers"], low_mem=data_low_mem)
+                                   layer_info["y_layers"], sample_weights=True, low_mem=data_low_mem)
     val_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
                                  train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
-                                 layer_info["y_layers"], low_mem=data_low_mem)
+                                 layer_info["y_layers"], sample_weights=True, low_mem=data_low_mem)
+    if not sample_weights_flag:
+        train_wrangler.compute_sample_weight("real_bininv", nbins=200, vis=True)
+        sample_weights_carry = train_wrangler.sample_weights
+    else:
+        train_wrangler.set_sample_weights(sample_weights_carry)
+    val_wrangler.set_sample_weights(sample_weights_carry)
+    train_wrangler.exclude_ids(frame_override_remove_ids)
+    val_wrangler.exclude_ids(frame_override_remove_ids)
+    layer_info["x_layers"] = train_wrangler.x_ids
+    layer_info["layer_dims"] = [layer_info["layer_dims"][ii] for ii in layer_info["x_layers"] + layer_info["y_layers"]]
+    layer_info["layer_names"] = [layer_info["layer_names"][ii] for ii in layer_info["x_layers"] + layer_info["y_layers"]]
+    model_parameters["hyperparams"] = model_parameters["hyperparams"] | layer_info
 
     ml.setup_train_model(train_params, train_wrangler, val_wrangler, model_parameters)
+    #, use_multiprocessing=True, workers=0
 
     del train_wrangler.h5_data
     del val_wrangler.h5_data
