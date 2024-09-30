@@ -1,1 +1,0 @@
-{"core": {"verbosity": 2, "model_dicts_locs": ["../models/configs/c2_late_a_pyramid.json", "../models/configs/c2_late_a_adjust.json"], "override_existing_dir": false, "override_epochs": 1}}
