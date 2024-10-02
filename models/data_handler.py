@@ -95,7 +95,7 @@ class data_wrangler (kr_utils.Sequence):
                 if vis:
                     plt.bar(np.arange(nbins)/nbins, valuefreq, width=1/nbins, color=colors[i])
                     plt.title(target_names[i] + " Log Normalized Pixel Value Frequency (" + str(nbins) + " bins)")
-                    plt.xlabel("Normalized Value (" + str(nbins) + " bins)")
+                    plt.xlabel("Normalized Value")
                     plt.ylabel("Log Bin Frequency")
                     plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
                     plt.clf()
@@ -110,8 +110,8 @@ class data_wrangler (kr_utils.Sequence):
                 valuefreqs.append(np.array(valuefreq))
                 plt.bar(np.arange(nbins)/nbins, valuefreqs[i], width=1/nbins, color=colors[i])
                 plt.title(target_names[i] + " Pixel Value Bin Weights (" + str(nbins) + " bins)")
-                plt.xlabel("Normalized Value")
-                plt.ylabel("Log Bin Weight")
+                plt.xlabel("Normalized Value (" + str(nbins) + " bins)")
+                plt.ylabel("Pixel Value Bin Weight")
                 plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
                 plt.clf()
             ### values for each class of sample... now map samples to values
