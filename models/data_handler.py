@@ -84,6 +84,8 @@ class data_wrangler (kr_utils.Sequence):
     def compute_sample_weight(self, mode, nbins, vis=False):
         self.sample_weights = [[] for ii in range(len(self.use_y_ids))]
         valuefreqs = []
+        target_names = ["WUE", "ESI", "AGB"]
+        colors = ["salmon", "lightgreen", "lightblue"]
         if mode == "real_bininv":
             print("computing sample weights (real_bininv)...", end="", flush=True)
             ### iterate over y layers and for each, bin and come up with thresholds
@@ -91,8 +93,10 @@ class data_wrangler (kr_utils.Sequence):
                 valuefreq = np.log(np.histogram(self.apply_norm(self.h5_data[self.use_y_ids[i]], self.use_y_ids[i]), bins=nbins, range=[0, 1])[0])
                 #print(valuefreq.shape)
                 if vis:
-                    plt.bar(np.arange(nbins), valuefreq)
-                    plt.title("y variable" + str(i) + "; " + str(sum(valuefreq)))
+                    plt.bar(np.arange(nbins)/nbins, valuefreq, width=1/nbins, color=colors[i])
+                    plt.title(target_names[i] + " Log Normalized Pixel Value Frequency (" + str(nbins) + " bins)")
+                    plt.xlabel("Normalized Value (" + str(nbins) + " bins)")
+                    plt.ylabel("Log Bin Frequency")
                     plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
                     plt.clf()
                 for j in range(nbins):
@@ -104,8 +108,10 @@ class data_wrangler (kr_utils.Sequence):
                 for j in range(nbins):
                     valuefreq[j] /= temp_max
                 valuefreqs.append(np.array(valuefreq))
-                plt.bar(np.arange(nbins), valuefreqs[i])
-                plt.title("y variable" + str(i) + "; " + str(sum(valuefreqs[i])))
+                plt.bar(np.arange(nbins)/nbins, valuefreqs[i], width=1/nbins, color=colors[i])
+                plt.title(target_names[i] + " Pixel Value Bin Weights (" + str(nbins) + " bins)")
+                plt.xlabel("Normalized Value")
+                plt.ylabel("Log Bin Weight")
                 plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
                 plt.clf()
             ### values for each class of sample... now map samples to values
@@ -123,6 +129,8 @@ class data_wrangler (kr_utils.Sequence):
                 print(self.sample_weights[i].shape)
         if vis:
             plt.close()
+        import sys
+        sys.exit(0)
 
     def set_sample_weights(self, sample_weights):
         print("confirming set sample weights")
