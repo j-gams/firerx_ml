@@ -4,6 +4,7 @@ from osgeo import gdal
 import numpy as np
 import h5py
 import keras.utils as kr_utils
+import matplotlib.pyplot as plt
 
 class data_wrangler (kr_utils.Sequence):
     def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, sample_weights, low_mem=True, **kwargs):
@@ -86,16 +87,14 @@ class data_wrangler (kr_utils.Sequence):
         if mode == "real_bininv":
             print("computing sample weights (real_bininv)...", end="", flush=True)
             ### iterate over y layers and for each, bin and come up with thresholds
-            #print(self.use_y_ids)
             for i in range(len(self.use_y_ids)):
                 valuefreq = np.log(np.histogram(self.apply_norm(self.h5_data[self.use_y_ids[i]], self.use_y_ids[i]), bins=nbins, range=[0, 1])[0])
                 #print(valuefreq.shape)
                 if vis:
-                    import matplotlib.pyplot as plt
                     plt.bar(np.arange(nbins), valuefreq)
                     plt.title("y variable" + str(i) + "; " + str(sum(valuefreq)))
                     plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
-                    plt.cla()
+                    plt.clf()
                 for j in range(nbins):
                     if valuefreq[j] == 0:
                         valuefreq[j] = 1
@@ -108,7 +107,7 @@ class data_wrangler (kr_utils.Sequence):
                 plt.bar(np.arange(nbins), valuefreqs[i])
                 plt.title("y variable" + str(i) + "; " + str(sum(valuefreqs[i])))
                 plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
-                plt.cla()
+                plt.clf()
             ### values for each class of sample... now map samples to values
             print("halfway...", end="", flush=True)
             for i in range(len(self.use_y_ids)):
@@ -122,6 +121,8 @@ class data_wrangler (kr_utils.Sequence):
             for i in range(len(self.use_y_ids)):
                 self.sample_weights[i] = np.array(self.sample_weights[i])
                 print(self.sample_weights[i].shape)
+        if vis:
+            plt.close()
 
     def set_sample_weights(self, sample_weights):
         print("confirming set sample weights")

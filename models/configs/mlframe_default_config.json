@@ -1,1 +1,1 @@
-{"core": {"verbosity": 2, "model_dicts_locs": ["configs/c2_mid_cube.json", "configs/multi_vit_cube.json", "../models/configs/c2_early_adjust.json", "../models/configs/c2_late_a_adjust.json"], "override_existing_dir": false, "remove_ids": [14], "override_epochs": 100}}
+{"core": {"verbosity": 2, "model_dicts_locs": ["configs/c2_late_a_pyramid.json", "configs/c2_mid_cube.json"], "override_existing_dir": false, "remove_ids": [14], "override_epochs": -1}}
