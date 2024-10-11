@@ -129,8 +129,6 @@ class data_wrangler (kr_utils.Sequence):
                 print(self.sample_weights[i].shape)
         if vis:
             plt.close()
-        import sys
-        sys.exit(0)
 
     def set_sample_weights(self, sample_weights):
         print("confirming set sample weights")

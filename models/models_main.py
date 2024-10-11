@@ -8,6 +8,7 @@ from modelbase import mltools as mlt
 from modelbase.cascade_late_a import model_cascade2_late_a
 from modelbase.cascade_mid import model_cascade2_mid
 from modelbase.cascade_early import model_cascade2_early
+from modelbase.cascade_early_b import model_cascade2_early_b
 from modelbase.vit_pyrencoder import multi_vit
 from modelbase.cube_cnn import model_flat2
 
@@ -47,6 +48,8 @@ def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
             working_model = model_flat2()
         if model_params["model_type"] == "c2_early":
             working_model = model_cascade2_early()
+        if model_params["model_type"] == "c2_early_b":
+            working_model = model_cascade2_early_b()
         if model_params["model_type"] == "c2_mid":
             working_model = model_cascade2_mid()
         if model_params["model_type"] == "c2_late_a":

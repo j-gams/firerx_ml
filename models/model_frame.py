@@ -124,7 +124,7 @@ for i in range(len(frame_models_configs_locs)):
                                  train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
                                  layer_info["y_layers"], sample_weights=True, low_mem=data_low_mem)
     if not sample_weights_flag:
-        train_wrangler.compute_sample_weight("real_bininv", nbins=200, vis=True)
+        train_wrangler.compute_sample_weight("real_bininv", nbins=200, vis=False)
         sample_weights_carry = train_wrangler.sample_weights
     else:
         train_wrangler.set_sample_weights(sample_weights_carry)

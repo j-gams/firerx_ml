@@ -23,9 +23,9 @@ See more about the functionality of specific files, or how to align data for cau
 #### 1.1 batch_align_raster.py <a name="batch_align"></a>
 This is the new and improved main file for cleaning raw raster files and aligning them for Causal Inference. 
 This process involves trimming the raster layers to the area of interest, reprojecting the raster layers to a consistent projection, and then resampling layers to have a consistent CRS and resolution. 
-This updaet contains several optimizations over align_raster.py, and allows for the automatic slicing and batching of larger states or regions, allowing for better scaling.
+This update contains several optimizations over align_raster.py, and allows for the automatic slicing and batching of larger states or regions, allowing for better scaling.
 This update also contains user improvements, particularly the streamlining of parameters.
-The default config for this process is dbci_default_config.json. The user may provide a different config file with the command line argument `config=config_name`. The parameters are as follows:
+The default config for this process is dbci_default_config.json. The user may provide a different config file with the command line argument `config=config_name`, for any config in the `configs` subdirectory. The parameters are as follows:
 
 | Parameter                        | Values                | Function                                                                                                                                                                                                                                                                                                                                                                                            |
 |----------------------------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -53,7 +53,7 @@ The default config for this process is dbci_default_config.json. The user may pr
 | data:extent_epsg_override        | False, or EPSG Number | This program is sometimes unable to load the extent projection correctly. In that case, set this value to the actual extent EPSG number, eg `3785`. Otherwise, this value should be `False`                                                                                                                                                                                                         |
 | data:exclude                     | List of Indices       | `[]` is recommended. Data layers below will not be processed if their index is listed here                                                                                                                                                                                                                                                                                                          |
 | data:extent_info                 | Dict                  | Parameters for the extent file. Required fields are: <br/> - `extent_src`, the directory in which extent data is stored, eg `../data/extent/colorado/` <br/> - `extent_name`, the extent file name, without file extension, eg `Colorado_State_Boundary`                                                                                                                                            |
-| data:data_info                   | List of Dicts         | A list of dicts which each contain parameters for one raster layer. Required fields for each layer are:<br/> - `loc`, the location of the raster file within the directory specified by raster_src, eg `colorado_wue_2022.tif`<br/> - `name`, the name of the output file for this layer, eg `ECOSTRESS_WUE_22`<br/> - `base_res`, the expected resolution of the layer in meters, eg `70` <br/> - `` |
+| data:data_info                   | List of Dicts         | A list of dicts which each contain parameters for one raster layer. Required fields for each layer are:<br/> - `loc`, the location of the raster file within the directory specified by raster_src, eg `colorado_wue_2022.tif`<br/> - `name`, the name of the output file for this layer, eg `ECOSTRESS_WUE_22`<br/> - `base_res`, the expected resolution of the layer in meters, eg `70` <br/> - `output_res`, the resolution that this layer should be aligned to, in meters, eg `70` <br/> - `resample_res`, the resolution at which layers should be resampled for the alignment step. This should probably be kept at the gcf of all resolutions involved, eg `10` when working with `base_res=30` and `output_res=70` <br/> - `override_input_proj`, either `False` or an EPSG number sucg as `5070`. Rarely (but sometimes) the program has difficulty loading layers with the correct projection. This forces the program to work with the provided projection instead of the projection identified in the file, when a non-False value is provided |
 
 #### 1.2 align_raster.py <a name="align_raster"></a>
 This is the old and busted file for cleaning raw raster files and aligning them for Causal Inference. Use at your own peril. 
@@ -63,22 +63,45 @@ This file is clunkier and lacks other optimizations, plus the ability to slice a
 The default config for this process is ci_default_config.json. The parameters are provided in the appendix.
 
 #### 1.3 align_ci_helpers.py <a name="align_cih"></a>
+This file contains helper functions to facilitate layer trimming, reprojection, and alignment, and primarily tools for slicing the work of alignment into batches to facilitate parallelization of the alignment step.
 #### 1.4 trim_reproject_rasters.py <a name="trim_reproj"></a>
+This file contains the function that performs automatic slicing and batching of larger states or regions. This greatly reduces the memory cost of aligment at any given step, which can greatly reduce overall runtime. 
 #### 1.5 create_pyramid_set.py <a name="pyramid"></a>
 This is the main file for building analysis ready datasets, from data pyramids to data cubes. The default config file for this process is mldata_default_config.json. The parameters are as follows:
 
 | Parameter                     | Values                  | Function                                                                                                                                                                                                                     |
 |-------------------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| core:mode                     | (pyramid, cube, adjust) | This parameter dictates whether the program creates a set of data pyramids (pyramid), full-resolution data cubes (cube), or adjusted resolution data cubes (adjust)                                                          |
+| core:mode                     | (pyramid, cube, adjust) | Dictates whether the program creates a set of data pyramids (pyramid), full-resolution data cubes (cube), or adjusted resolution data cubes (adjust)                                                          |
 | core:run_name_suffix_default  | (string)                | The "name" of each run is dictated by the mode followed by this suffix (eg pyramid_set1 where the suffix is "set1"). This is used for directory names, etc.                                                                  |                                                                                                                                                                 |
-| core: run_name_prefix         | (file path)             | The directory in which to create and save the resulting dataset. This can be relative to the manage_data directory. The recommended path is `../data/ml_sets/`       .                                                       |
- | params:dimension_override     | sample meters (int)     | This value dictates the size of samples to be built, eg when set to 1000 the program extracts samples on a 1000m*1000m grid. When set to -1, the size is determined by the grid size of the layer specified by `base_layer`. | 
- | params:cube_reduce_dim_factor | factor (scalar > 0)     | This value dictates the ratio of                                                                                                                                                                                             | 
-#### 1.6 create_pyramid_functions.py <a name="pyramid_func"></a>
-#### 1.7 raster_helpers.py <a name="pyramid_help"></a>
-#### 1.8 aws_check.sh <a name="aws_check"></a>
-#### 1.9 aws_psychic.sh <a name="aws_psychic"></a>
+| core: run_name_prefix         | (file path)             | Directory in which to create and save the resulting dataset. This can be relative to the manage_data directory. The recommended path is `../data/ml_sets/`                                                              |
+| params:dimension_override     | sample meters (int)     | Dictates the size of samples to be built, eg when set to 1000 the program extracts samples on a 1000m*1000m grid. When set to -1, the size is determined by the grid size of the layer specified by `base_layer` | 
+| params:cube_reduce_dim_factor | factor (scalar > 0)     | Dictates the resolution of data cubes when they are created with the `adjust` mode, computed so that the ratio of adjusted cube parameters to pyramid paramters is (approximately) this value. Slop in these values comes from the integer size of each layer. The recommended value for direct comparison of adjusted cubes and pyramids is `1`, so that each adjusted cube will have approximately the same number of parameters as each pyramid. |
+| params:load_checkpoint | True/False | Whether to resume from a previously saved checkpoint. Checkpoints are saved after the sample list has been compiled, after the train/val/test partition has been performed, and after samples have been extracted and saved. This is to avoid repeating work when recompiling data, creating pyramid and cube sets, or bugfixing. The recommended value is `True`|
+| params:data_target_proj | projection (string) | Saved to dataset info file to help with visual checks, but doesn't really do anything at present. Leave as `EPSG4326WSG84` so long as that is the projection in use |
+| params:split_method | (blocks, fullrandom) | Method to use for geospatial data partition. Use `blocks` to partition randomly sampled regions of data for validation and test sets, and `fullrandom` to shuffle the sample indices and partition based on shuffle order. The recommended mode is `blocks` to avoid pitfalls of potential spatial autocorrelation in data |
+| params:split_blocks_buffer | block buffer size (int) | Determines the minimum distance between partition blocks, and NOT the distance between partitioned blocks and train data. This is intended to better disperse sample blocks across the region, but block size can change based on missing data. This value needs to be balanced against the number of partition blocks in `split_blocks_regions` so that there is enough room to place all blocks after buffers have been drawn. The default value is `10`|
+| params:split_blocks_regions | number of blocks (int) | Determines the number of blocks to draw when partitioning data. The default value is `100`|
+| params:split_outer_buffer | boundary buffer size (int) | Determines how close to the edge of the region sample blocks may be drawn. To improve stability versus lower values of this paramter, the default value is `2` |
+| params:partition_n_splits | (int) | Determines the number of cross-validation splits to compute. The default value is `10` |
+| params:partition_test_ratio | fraction (scalar 0 < t < 1) | Determines the fraction of total samples to be set aside for the test set (t) and the fraction to be set aside for the remaining combined set (1-t). The default value is `0.3`|
+| params:partition_val_ratio | fraction (scalar 0 < v < 1) | Determines the fraction of combined set samples to be set aside for validation in each split (v), and the fraction to be set aside for training in each split (1-v). The default value is `0.2` |
+| params:exclude | list of layer indices| Allows for layers listed in `data_info` to be excluded from the dataset. Set to `[]` to run on all layers |
+| params:buffer_fill | (int) | No-data fill value for buffers added to layers. The default value is `-999` |
+| params:np_random_seed | (int) | Random seed to use for reproducible data partitioning |
+| params:h5_chunk_size | (int) | The number of samples to extract to memory before they are saved to .h5 files. The performance tradeoffs of the chunk size are unclear, but it may be that very large (>1000) chunks can work and speed computation at this point. The default value is `1000` |
+| params:parallelize | True/False | Whether to parallelize the extraction of samples. Using `True` is highly recommended for performance benefits |
+| params:base_layer | Layer index (int) | Which layer CRS to use as the base CRS for patch extraction. The coarsest base layer is recommended. |
+| data:data_info | List of dicts | A list of dicts which each contain parameters for one raster layer. Required fields for each layer are:<br/> - `loc`, the location of the reprojected and trimmed raster file relative to manage_data, eg `../data/aligned_raster/colorado_ml/reprojected/SRTM_01_mean_4326_0_0.tif`<br/> - `name`, a short name for this layer that is recorded in the output `info.txt`, eg `SRTM`<br/> - `base_res`, the expected resolution of the layer in meters, eg `30` <br/> - `xy`, whether this layer is an input or a target layer, either `x` or `y` <br/> - `index`, the index of this layer in the list (for compatibility reasons) <br/> - `tyoe`, either `numeric` or `categoric` |
+| data:test_subset | list of indices | For test purposes|
 
+#### 1.6 create_pyramid_functions.py <a name="pyramid_func"></a>
+This file contains helper functions for the extraction of data cubes and pyramids. This includes tools for compiling a list of samples without missing data, partitioning the data, and extracting samples.
+#### 1.7 raster_helpers.py <a name="pyramid_help"></a>
+This file contains a function to save geotiff files.
+#### 1.8 aws_check.sh <a name="aws_check"></a>
+This file is no longer in use
+#### 1.9 aws_psychic.sh <a name="aws_psychic"></a>
+This file is no longer in use
 ### 2. Align Data for Causal Inference <a name="ci"></a>
 This is an overview of how to align a dataset for Causal Inference.
 update the 
