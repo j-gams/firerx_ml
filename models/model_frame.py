@@ -6,6 +6,7 @@ import json
 #sys.path.append("../utils")
 #import utils
 import models_main as ml
+import modelbase.mltools as mlt
 import os
 from data_handler import data_wrangler
 
@@ -123,7 +124,10 @@ for i in range(len(frame_models_configs_locs)):
     val_wrangler = data_wrangler(data_root_dir, n_layers, len(train_params["run_on_folds"]), layer_info["layer_dims"],
                                  train_params["batch_size"], other_info["buffer_nodata"], layer_info["x_layers"],
                                  layer_info["y_layers"], sample_weights=True, low_mem=data_low_mem)
+    ### if we haven't computed them for this run yet, we need to compute them
     if not sample_weights_flag:
+        mlt.compile_sample_weights("bin_log", "compute", train_wrangler, 200, train_params["run_on_folds"], 
+                                   "../data/ml_sets/sample_weights.txt", make_vis=False, set_weights=True)
         train_wrangler.compute_sample_weight("real_bininv", nbins=200, vis=False)
         sample_weights_carry = train_wrangler.sample_weights
     else:

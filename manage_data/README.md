@@ -1,4 +1,4 @@
-## Manage Data -- Overview
+## Manage Data - Overview
 The manage_data directory contains tools for manageing data, particularly for cleaning raw raster data, aligning raster data for use in causal inference, and extracting analysis-ready datasets suitable for machine learning from raw raster data (both data cubes and data pyramids).
 
 See more about the functionality of specific files, or how to align data for causal inference or build analysis-ready datasets:\
@@ -9,6 +9,7 @@ See more about the functionality of specific files, or how to align data for cau
 
 
 ### 1. Files <a name="files"></a>
+This is an overview of the files in manage_data, elaborating on what work is performed in each file and parameters for those which users should interact with directly.
  - batch_align_raster.py ([description](#batch_align))
  - align_raster.py ([description](#align_raster))
  - align_ci_helpers.py ([description](#align_cih))
@@ -103,25 +104,49 @@ This file is no longer in use
 #### 1.9 aws_psychic.sh <a name="aws_psychic"></a>
 This file is no longer in use
 ### 2. Align Data for Causal Inference <a name="ci"></a>
-This is an overview of how to align a dataset for Causal Inference.
-update the 
-=======
-See more about the functionality of specific files, or how to align data for causal inference or build analysis-ready datasets:
-[Files](#files)
-[Causal Inference Alignment](#ci)
-[Build Analysis-Ready Datasets](#mldata)
+This is an overview of how to align a dataset for Causal Inference, using the default configs below:
+```
+{"core":    {"multiprocessing_mode": True},
+ "name":    {"collection_name": "colorado_ml_lf22/",
+             "collection_directory_prefix": "../data/aligned_raster/",
+             "trim_step_out": "trimmed/",
+             "reproj_step_out": "reprojected/",
+             "align_step_out": "aligned/",
+             "raster_src": "../data/raw_raster/"},
+ "params":  {"subdiv_meter_overlap": 1000,
+             "subdiv_meter_slop": 10,
+             "subdiv_hv_split": (1, 1),
+             "res_check_tol": 0.001,
+             "output_nodata": -99999,
+             "resampling_mode": "n_meter"},
+ "skip":    {"guiding_load": False,
+             "subdivision": True,
+             "trim": False,
+             "extent_reproj": False,
+             "raster_reproj": False,
+             "resolution_check": False,
+             "alignment": True},
+ "data":    {"guiding_layer_idx": 0,
+             "extent_epsg_override": False, ### need 3785 for california
+             "exclude": [],
+             "extent_info": {"extent_src": "../data/extent/colorado/",
+                             "extent_name": "Colorado_State_Boundary"},
+             "data_info":   [{"loc": "colorado_wue_2022.tif", 
+                              "name": "ECOSTRESS_WUE_22",
+                              "base_res": 70, 
+                              "output_res": 70, 
+                              "resample_res": 10,
+                              "input_func": "align_tif", 
+                              "avg_func": "align_avg",  
+                              "avg_method": "mean", 
+                              "override_input_proj": False},
+                             ...
+                            ]
+            }
+}
 
-### 1. Files <a name="files"></a>
- - align_raster.py
- - align_ci_helpers.py
- - create_pyramid_set.py
- - create_pyramid_functions.py
- - raster_helpers.py
- - configs
- - aws_check.sh
- - aws_psychic.sh
- - 
-### 2. Align Data for Causal Inference <a name="ci"></a>
+```
+
 ### 3. Build Analysis-Ready Datasets <a name="mldata"></a>
 ### 4. Appendix <a name="appendix"></a>
 

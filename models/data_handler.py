@@ -16,20 +16,24 @@ class data_wrangler (kr_utils.Sequence):
         self.y_ids = y_ids
         self.use_y_ids = list(y_ids)
         self.batch_size = batch_size
+        ### possible modes -- {train, val, combine, test}
         self.mode = "train"
         self.train_fold = 0
         self.n_folds = n_folds
         self.use_sample_weights = sample_weights
+        self.sample_weights = []
         self.low_memory = low_mem
 
-        ### load h5 data
+        ### prepare for h5 data
         self.layer_locs = []
         self.h5_src = []
         self.h5_data = []
+        ### setup references for h5 data
         for i in range(n_layers):
             self.layer_locs.append(rootdir + "/layer_"+str(i)+".h5")
             self.h5_src.append(h5py.File(self.layer_locs[i], 'r'))
             self.h5_data.append(self.h5_src[i]["data"])
+        ### if not low_memory mode load all the layers into memory 
         if not self.low_memory:
             for i in range(n_layers):
                 self.h5_data[i] = np.array(self.h5_data[i])
@@ -61,8 +65,10 @@ class data_wrangler (kr_utils.Sequence):
             self.index_len = self.train_ids[self.train_fold].shape[0]
         elif self.mode == "val":
             self.index_len = self.val_ids[self.train_fold].shape[0]
-        else:
+        elif self.mode == "combine":
             self.index_len = self.combined_index.shape[0]
+        elif self.mode == "test":
+            self.index_len = self.test_index.shape[0]
         self.lenn = int(np.ceil(self.index_len / self.batch_size))
         self.shuffle()
 
@@ -78,7 +84,15 @@ class data_wrangler (kr_utils.Sequence):
     def include_all(self):
         self.x_ids = self.cache_x_ids
 
-    def load_sample_weights(self, loc, nbins):
+    def get_h5_data(self, layerid):
+        ### we do not have the data loaded
+        if self.low_memory:
+            return np.array(self.h5_src[layerid]["data"])
+        ### we have the data loaded already
+        else:
+            return self.h5_data[layerid]
+
+    """def load_sample_weights(self, loc, nbins):
         pass
 
     def compute_sample_weight(self, mode, nbins, vis=False):
@@ -128,7 +142,7 @@ class data_wrangler (kr_utils.Sequence):
                 self.sample_weights[i] = np.array(self.sample_weights[i])
                 print(self.sample_weights[i].shape)
         if vis:
-            plt.close()
+            plt.close()"""
 
     def set_sample_weights(self, sample_weights):
         print("confirming set sample weights")
@@ -139,16 +153,21 @@ class data_wrangler (kr_utils.Sequence):
             np.random.shuffle(self.train_ids[self.train_fold])
         elif self.mode == "val":
             np.random.shuffle(self.val_ids[self.train_fold])
-        else:
+        elif self.mode == "combine":
             np.random.shuffle(self.combined_index)
+        elif self.mode == "test":
+            np.random.shuffle(self.test_index)
+
 
     def getindices(self, idx):
         if self.mode == "train":
             return self.train_ids[self.train_fold][idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
         elif self.mode == "val":
             return self.val_ids[self.train_fold][idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
-        else:
+        elif self.mode == "combine":
             return self.combined_index[idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
+        elif self.mode == "test":
+            return self.test_index[idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
 
     def __len__ (self):
         return self.lenn
@@ -164,23 +183,6 @@ class data_wrangler (kr_utils.Sequence):
         self.use_y_ids = [self.y_ids[set_to]]
     def set_multi_y(self):
         self.use_y_ids = list(self.y_ids)
-
-    def test_get(self, idx):
-        ret_indices = np.sort(self.getindices(idx)).astype(int)
-        ret_x = []
-        ret_y = []
-        for i in range(len(self.x_ids)):
-            ret_x.append(np.zeros((len(ret_indices), self.cube_res[self.x_ids[i]], self.cube_res[self.x_ids[i]])))
-        for i in range(len(self.y_ids)):
-            ret_y.append(np.zeros((len(ret_indices), self.cube_res[self.y_ids[i]], self.cube_res[self.y_ids[i]])))
-
-        for j in range(len(self.x_ids)):
-            ret_x[j][:, :, :] = np.array(self.h5_data[self.x_ids[j]][ret_indices, :, :])
-
-        for j in range(len(self.y_ids)):
-            ret_y[j][:, :, :] = np.array(self.h5_data[self.y_ids[j]][ret_indices, :, :])
-
-        return ret_x, ret_y
 
     def __getitem__ (self, idx):
         ### load cubes

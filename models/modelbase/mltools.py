@@ -5,73 +5,102 @@ import numpy as np
 import pickle
 from scipy import stats
 
-def compile_sample_weights(method, func_mode, wrangler, n_bins, n_folds, active_fold, save_to, make_vis=False, set_weights=True):
+def bin_freq_plt(make_vis, n_bins, valuefreq, i, plt_title, yax_title):
+    if make_vis:
+        ### make bin frequency plot
+        ### hard coded for now... for the sake of plotting
+        target_names = ["WUE", "ESI", "AGB"]
+        colors = ["salmon", "lightgreen", "lightblue"]
+        plt.bar(np.arange(n_bins)/n_bins, valuefreq, width=1/n_bins, color=colors[i])
+        plt.title(target_names[i] + plt_title)
+        plt.xlabel("Normalized Value")
+        plt.ylabel(yax_title)
+        plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
+        plt.clf()
+
+def bin_weight_plt(make_vis, n_bins, valuefreqs, i, plt_title, yax_title):
+    if make_vis:
+        ### hard coded for now... for the sake of plotting
+        target_names = ["WUE", "ESI", "AGB"]
+        colors = ["salmon", "lightgreen", "lightblue"]
+        plt.bar(np.arange(n_bins)/n_bins, valuefreqs[i], width=1/n_bins, color=colors[i])
+        plt.title(target_names[i] + plt_title)
+        plt.xlabel("Normalized Value (" + str(n_bins) + " bins)")
+        plt.ylabel(yax_title)
+        plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
+        plt.clf()
+
+def compile_sample_weights(method, func_mode, wr_mode, wrangler, n_bins, n_folds, save_to, make_vis=False, set_weights=True):
+    ### TODO -- moved this to be sample weights for all folds computed/in memory at all times
     ### wrangler needs to be set up beforehand...
     sample_weights = [[[] for ii in range(len(wrangler.use_y_ids))] for jj in range(n_folds)]
+    ### if we have already computed sample weights, we can load from a file
     if func_mode == "load_from_file":
-        print("loading sample weights from", save_to)
-        for j in range(len(n_folds)):
-            for i in range(len(sample_weights)):
-                sample_weights[j][i] = np.load(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv")
-                if j == active_fold and set_weights:
-                    wrangler.sample_weights[i] = sample_weights[i]
-        return sample_weights
-    else:
-        ### visualization parameters
-        valuefreqs = []
-        if make_vis:
-            target_names = ["WUE", "ESI", "AGB"]
-            colors = ["salmon", "lightgreen", "lightblue"]
-        if method == "bin_log":
-            print("computing sample weights (bin_log method)...", end="", flush=True)
-            ### iterate over y layers and for each, bin and come up with thresholds
+        if wr_mode == "train":
+            print("loading sample weights from", save_to)
             for j in range(len(n_folds)):
+                for i in range(len(sample_weights)):
+                    ### load weights at fold j, y variable i
+                    sample_weights[j][i] = np.load(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv")
+            if set_weights:
+                wrangler.sample_weights = [[np.array(sample_weights[jj][ii]) for ii in wrangler.use_y_ids] for jj in range(n_folds)]
                 for i in range(len(wrangler.use_y_ids)):
-                    ### compute log bin frequencies
-                    valuefreq = np.log(np.histogram(wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]], wrangler.use_y_ids[i]), bins=n_bins, range=[0, 1])[0])
-                    if make_vis:
-                        ### make bin frequency plot
-                        plt.bar(np.arange(n_bins)/n_bins, valuefreq, width=1/n_bins, color=colors[i])
-                        plt.title(target_names[i] + " Log Normalized Pixel Value Frequency (" + str(n_bins) + " bins)")
-                        plt.xlabel("Normalized Value")
-                        plt.ylabel("Log Bin Frequency")
-                        plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
-                        plt.clf()
-                    ### iterate over bins and compute bin weights
-                    for j in range(n_bins):
-                        if valuefreq[j] == 0:
-                            valuefreq[j] = 1
-                        else:
-                            valuefreq[j] = (wrangler.h5_data[wrangler.use_y_ids[i]].shape[1]**2)/valuefreq[j]
-                    ### normalize - scale bin weights to <= 1
-                    temp_max = np.max(valuefreq)
-                    for j in range(n_bins):
-                        valuefreq[j] /= temp_max
-                    valuefreqs.append(np.array(valuefreq))
-                    if make_vis:
-                        ### make bin weight plot
-                        plt.bar(np.arange(n_bins)/n_bins, valuefreqs[i], width=1/n_bins, color=colors[i])
-                        plt.title(target_names[i] + " Pixel Value Bin Weights (" + str(n_bins) + " bins)")
-                        plt.xlabel("Normalized Value (" + str(n_bins) + " bins)")
-                        plt.ylabel("Pixel Value Bin Weight")
-                        plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
-                        plt.clf()
+                    wrangler.sample_weights[i] = np.array(wrangler.sample_weights[i])
+            return sample_weights
+        elif wr_mode == "combine":
+            pass
+    ### otherwise we need to compute the sample weights
+    else:
+        if wr_mode == "train":
+            ### visualization parameters
+            valuefreqs = []
+
+            ### compute weights over all folds
+            for j in range(len(n_folds)):
+                wrangler.set_fold(j)
+                for i in range(len(wrangler.use_y_ids)):
+                    ### compute weights with chosen method
+                    ### this line is probably requiring that wrangler is setup in not lo-mem mode (preloaded data)
+                    valuefreq = np.histogram(wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]][wrangler.train_ids[j]], wrangler.use_y_ids[i]), bins=n_bins, range=[0, 1])[0]
+                    if method == "bin_log":
+                        valuefreq = np.log(valuefreq)
+                        bin_freq_plt(make_vis,n_bins, valuefreq, i, " Log Normalized Pixel Value Frequency (" + str(n_bins) + " bins)", "Log Bin Frequency")
+                        ### iterate over bins and compute bin weights
+                        for k in range(n_bins):
+                            if valuefreq[k] == 0:
+                                valuefreq[k] = 1
+                            else:
+                                valuefreq[k] = (wrangler.h5_data[wrangler.use_y_ids[i]].shape[1]**2)/valuefreq[k]
+                        ### normalize - scale bin weights to <= 1
+                        temp_max = np.max(valuefreq)
+                        for k in range(n_bins):
+                            valuefreq[k] /= temp_max
+                        valuefreqs.append(np.array(valuefreq))
+                        bin_weight_plt(make_vis, n_bins, valuefreqs, i, " Pixel Value Bin Weights (" + str(n_bins) + " bins)", "Pixel Value Bin Weight")
+                    if method == "bin_frq":
+                        pass
+
                 ### values for each class of sample... now map samples to values
                 print("halfway (" + str(j) + ")...", end="", flush=True)
                 for i in range(len(wrangler.use_y_ids)):
-                    for k in range(len(wrangler.h5_data[wrangler.use_y_ids[i]])):
+                    for k in range(len(wrangler.h5_data[wrangler.use_y_ids[i]][wrangler.train_ids[j]])):
                         ### attrocious line below computes sample weights by summing over sample pixel bin weights
-                        wrangler.sample_weights[i].append(np.sum(valuefreqs[i][np.clip((wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]][k], wrangler.use_y_ids[i]) * n_bins), None, n_bins-1).astype(int)]))
+                        sample_weights[j][i].append(np.sum(valuefreqs[i][np.clip((wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]][k], wrangler.use_y_ids[i]) * n_bins), None, n_bins-1).astype(int)]))
+
             print("done")
             if set_weights:
+                wrangler.sample_weights = [[np.array(sample_weights[jj][ii]) for ii in wrangler.use_y_ids] for jj in range(n_folds)]
                 for i in range(len(wrangler.use_y_ids)):
                     wrangler.sample_weights[i] = np.array(wrangler.sample_weights[i])
-        ### save data... 
-        print("saving sample weights to", save_to)
-        for j in range(len(n_folds)):
-            for i in range(len(sample_weights)):
-                np.save(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv", sample_weights[i])
-        return sample_weights
+
+            ### save data... 
+            print("saving sample weights to", save_to)
+            for j in range(len(n_folds)):
+                for i in range(len(sample_weights)):
+                    np.save(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv", sample_weights[i])
+            return sample_weights
+        elif wr_mode == "combine":
+            pass
 
 class lossCallback(tf.keras.callbacks.Callback):
     def __init__ (self):
