@@ -22,8 +22,9 @@ if __name__ == "__main__":
     config_dir = "configs/"
     config_prefix = "dbci_"
     config_name = "default_config_ml"
-    if len(sys.argv) > 2 and sys.argv[2][:6] == "config":
-        config_name = sys.argv[2][7:]
+    if len(sys.argv) > 1 and sys.argv[1][:6] == "config":
+        config_name = sys.argv[1][7:]
+        print("using non-default config:", config_name)
     config_loc = config_dir + config_prefix + config_name + ".json"
     ### load config
     config = utils.read_config(config_loc)
@@ -197,6 +198,7 @@ if __name__ == "__main__":
     for subregion_idx in range(len(subregions)):
         sub_i, sub_j = subregions[subregion_idx]
 
+        ### open subregion extent
         sub_datsrc = ogr.Open(extent_info["extent_src"] + "subregions/" + new_proj_base + '_' + str(extent_epsg) + '_' + str(sub_i) + '_' + str(sub_j) + '.shp')
         numLayers = sub_datsrc.GetLayerCount()
         sub_vlayer = sub_datsrc.GetLayer()
@@ -325,7 +327,7 @@ if __name__ == "__main__":
                 raster_crs.append((ulh, ulv, ph, pv))
                 ### extract np array from raster
                 raster_nparray.append(raster[-1].ReadAsArray().transpose())
-                print("-> done")
+                print("-> done (" + reproj_step_dir + data_info[i]["name"] + '_' + str(temp_guiding_epsg) + '_' + str(sub_i) + '_' + str(sub_j) + ")")
         if not skip_alignment:
             if multiprocessing_mode:
                 print("multiprocessing - available cpus", multiprocessing.cpu_count())
@@ -335,6 +337,7 @@ if __name__ == "__main__":
             ### deal with multiprocessing
             ### iterate over layers to align
             print("processing layers...")
+            guide_ulh, guide_ulv, guide_ph, guide_pv = raster_crs[guiding_layer_idx]
             for i in range(len(data_info)):
                 ### basic resampling parameters
                 if i == guiding_layer_idx:
@@ -358,15 +361,14 @@ if __name__ == "__main__":
                 ### compute sampling size... target res // resample_res
                 sample_grid_size = math.ceil(data_info[i]["output_res"] / data_info[i]["resample_res"])
 
-                ### target crs -- same ulh, ulv as y crs, widths defined by desired dim
-                target_crs = [tgulh, tgulv, (data_info[i]["output_res"] / data_info[guiding_layer_idx]["base_res"] * tgph),
-                              (data_info[i]["output_res"] / data_info[guiding_layer_idx]["base_res"] * tgpv)]
+                ### target crs -- same ulh, ulv as guiding crs, widths defined by desired dim
+                target_crs = [guide_ulh, guide_ulv, ((data_info[i]["output_res"] / data_info[guiding_layer_idx]["base_res"]) * guide_ph),
+                              ((data_info[i]["output_res"] / data_info[guiding_layer_idx]["base_res"]) * guide_pv)]
 
                 # slice width, sample_grid_size, layer_crs, target_crs, layer_nodata_val, oob_nodata_val, avg_method
                 resample_params = [output_y_size, sample_grid_size, raster_crs[i], target_crs, raster_ndvals[i], output_nodata,
                                    data_info[i]["avg_method"], resampling_mode]
                 map_params = []
-                print(output_x_size)
                 if multiprocessing_mode:
                     ### determine number of cpus available for multiprocessing purposes
                     ncpu = multiprocessing.cpu_count()

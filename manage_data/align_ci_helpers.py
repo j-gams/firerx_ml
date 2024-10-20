@@ -18,12 +18,15 @@ def munger(switchvar):
 def slice_batch(batch_params):
     band_list, layer_arr, resample_params = batch_params
     result = []
+    slice_oob_check = 0
     for band in band_list:
         if band_list[0] == 0 and (band + 1) % (len(band_list) // 50) == 0:
             print("-", end="", flush=True)
-        result.append(multiprocess_align(resample_params, layer_arr, band))
+        band_result, all_oob = multiprocess_align(resample_params, layer_arr, band)
+        result.append(band_result)
+        slice_oob_check += all_oob
     if band_list[0] == 0:
-        print("-->|  strip completed")
+        print("-->|  strip completed: slice oob count is", slice_oob_check)
     return result
 
 def chunk_list(length, nchunks, idx):
@@ -69,6 +72,7 @@ def multiprocess_align(params, layer_raster_np, band):
     ### target crs needs to have base y UL and target resolution pixel width
 
     ### slice is just one row of data. Iterate over and sample
+    oob_check = 0
     for j in range(slice_width):
         target_coord_i, target_coord_j = idx_to_coord(band, j, target_ulh, target_ulv, target_ph, target_pv)
         layer_idx_i, layer_idx_j = coord_to_idx(target_coord_i, target_coord_j, layer_ulh, layer_ulv, layer_ph, layer_pv)
@@ -82,12 +86,14 @@ def multiprocess_align(params, layer_raster_np, band):
             for si in range(sample_grid_size):
                 for sj in range(sample_grid_size):
                     idx_si = int(layer_idx_i + sampling_x_offset + (si * sampling_x_increment))
-                    idx_sj = int(layer_idx_j + sampling_y_offset + (si * sampling_y_increment))
+                    idx_sj = int(layer_idx_j + sampling_y_offset + (sj * sampling_y_increment))
                     ### check out_of_bounds
                     if in_bounds_check(layer_raster_np.shape, idx_si, idx_sj):
                         retrieve = layer_raster_np[idx_si, idx_sj]
                         if retrieve != layer_nodata_val:
                             sample.append(retrieve)
+                    else:
+                        oob_check += 1
             if len(sample) == 0:
                 all_oob_count += 1
                 temp_data[j] = oob_nodata_val
@@ -166,7 +172,7 @@ def multiprocess_align(params, layer_raster_np, band):
                     weighted_bin_count = np.bincount(np.searchsorted(unique_vals, temp), (weights_i @ weights_j)[countxy])
                     temp_data[j] = unique_vals[weighted_bin_count.argmax()]
 
-    return temp_data
+    return temp_data, all_oob_count
 
 def idx_to_coord(ix, iy, ulh, ulv, psh, psv):
     cx = ulh + (ix * psh)
