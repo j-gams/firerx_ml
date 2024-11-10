@@ -17,72 +17,145 @@ from data_handler import data_wrangler
 
 import sys
 
-def setup_train_model(train_params, train_wrangler, val_wrangler, model_params):
-    ### make and setup models...
-    setup_start_time = time.process_time()
+def get_model(modeltype):
+    ### INITIALIZE CORRECT MODEL TYPE
+    ###
+    if modeltype == "vit":
+        return multi_vit()
+    if modeltype == "f2_baseline":
+        return model_flat2()
+    if modeltype == "c2_early":
+        return model_cascade2_early()
+    if modeltype == "c2_early_b":
+        return model_cascade2_early_b()
+    if modeltype == "c2_mid":
+        return model_cascade2_mid()
+    if modeltype == "c2_late_a":
+        return model_cascade2_late_a()
+    if modeltype == "c2_late_b":
+        return None
 
-    ### set wrangler mode
-    if train_params["mode"] == "test_1":
-        ### switch to test and make predictions
-        ### TODO -- verify this actually does something
-        val_wrangler.set_mode("test")
-    else:
-        train_wrangler.set_mode("train")
-        val_wrangler.set_mode("val")
+def setup_train_model(actions, run_params, model_params, metadata):
+    ### computed metrics ... format should be [action][fold][metric][granularity][ylayer]
+    ### after reformat ... [action][metric_type+granularity][ylayer][fold]
+    computed_metrics = {}
 
-    computed_metrics = []
 
-    ### train models if required:
-    for fold in train_params["run_on_folds"]:
-        if train_params["verbosity"] != 0:
-            print(" *** beginning fold", fold)
+    ### iterate over train, val, test...
+    ### conflict between folds in train, vali vs experiments that dont have folds...
+    ### think I need to do this by action and not by ...
+    for action in actions:
+        ### SECTION 1: SETUP WORK FOR THIS ACTION
+        wranglers = {}
+        action_modes = run_params["train_params"]["mode"][action]
+        for i in range(len(action_modes)):
+            ### initialize wrangler
+            sw_temp = False
+            if action_modes[i] == "train" or action_modes[i] == "combine":
+                sw_temp = True
+            wranglers[action_modes[i]] = data_wrangler(run_params["data_root_dir"], metadata["n_layers"], run_params["train_params"]["run_on_folds"], 
+                                         metadata["layer_dims"], run_params["train_params"]["batch_size"], metadata["buffer_nodata"], metadata["x_layers"],
+                                         metadata["y_layers"], sample_weights=sw_temp, low_mem=run_params["data_low_mem"])
+            ### setup wrangler
+            wranglers[action_modes[i]].setup(action_modes[i])
 
-        train_wrangler.set_fold(fold)
-        val_wrangler.set_fold(fold)
+        if action == "train" or action == "resume":
+            computed_metrics[action] = []
+            print("TRAINING")
+            ### compute sample weights -- this is over all folds, etc
+            sw = mlt.compile_sample_weights("bin_log", model_params["hyperparams"]["sw_compute"], action, wranglers[action_modes[0]], model_params["hyperparams"]["sw_bins"], 
+                                            run_params["train_params"]["run_on_folds"], run_params["data_root_dir"],
+                                            make_vis=True, set_weights=False)
+            ### set sample weights for each 
+            for i in range(len(action_modes)):
+                wranglers[action_modes[i]].set_sample_weights(sw)
+            for fold in run_params["train_params"]["run_on_folds"]:
+                ### set start time
+                action_start_time = time.process_time()
+                if run_params["train_params"]["verbosity"] != 0:
+                    print(" *** beginning", action, "fold", fold)
 
-        ### INITIALIZE CORRECT MODEL TYPE
-        ###
-        if model_params["model_type"] == "vit":
-            working_model = multi_vit()
-        if model_params["model_type"] == "f2_baseline":
-            working_model = model_flat2()
-        if model_params["model_type"] == "c2_early":
-            working_model = model_cascade2_early()
-        if model_params["model_type"] == "c2_early_b":
-            working_model = model_cascade2_early_b()
-        if model_params["model_type"] == "c2_mid":
-            working_model = model_cascade2_mid()
-        if model_params["model_type"] == "c2_late_a":
-            working_model = model_cascade2_late_a()
-        if model_params["model_type"] == "c2_late_b":
-            working_model = None
+                ### set wrangler fold
+                wranglers[action_modes[0]].set_fold(fold)
+                wranglers[action_modes[1]].set_fold(fold)
+                
+                ### INITIALIZE MODEL
+                working_model = get_model(run_params["model_type"])
+                working_name = run_params["model_name"] + "_" + str(fold)
+                working_model.setup(model_params["hyperparams"], metadata, run_params["model_dir"], working_name,
+                                    run_params["train_params"]["verbosity"], run_params["train_params"]["callbacks"])
 
-        working_model.setup(model_params["hyperparams"], model_params["model_dir"], model_params["model_name"],
-                            train_params["verbosity"], train_params["callbacks"])
+                ### LOAD MODEL IF WE ARE RESUMING
+                if action == "resume":
+                    working_model.load()
+                    if run_params["train_params"]["verbosity"] != 0:
+                        print("loaded model")
+                
+                ### TRAIN MODEL FOR N EPOCHS
+                print("training model for", run_params["train_params"]["n_epochs_default"], "epochs")
+                working_model.fit(wranglers[action_modes[0]], wranglers[action_modes[1]], 
+                                  run_params["train_params"]["n_epochs_default"], 
+                                  run_params["train_params"]["workers"], run_params["train_params"]["multip"])
+                if run_params["train_params"]["verbosity"] != 0:
+                    print("done fitting model")
 
-        ### LOAD MODEL IF REQUIRED
-        ###
-        if train_params["mode"] == "load" or train_params["mode"] == "loadtrain" or train_params["mode"] == "test_1":
+                ### SAVE MODEL
+                if run_params["train_params"]["save_model"]:
+                    working_model.save()
+                
+                time_delta = time.process_time() - action_start_time
+                computed_metrics[action].append({"time": time_delta})
+
+            del wranglers[action_modes[0]].h5_data
+            del wranglers[action_modes[1]].h5_data
+
+        if action == "val":
+            computed_metrics[action] = []
+            print("VALIDATING")
+            for i in range(len(action_modes)):
+                wranglers[action_modes[i]].set_sample_weights(sw)
+            for fold in run_params["train_params"]["run_on_folds"]:
+                ### set start time
+                action_start_time = time.process_time()
+                ### set wrangler fold
+                wranglers[action_modes[0]].set_fold(fold)
+                ### INITIALIZE MODEL
+                working_model = get_model(run_params["model_type"])
+                working_name = run_params["model_name"] + "_" + str(fold)
+                working_model.setup(model_params["hyperparams"], metadata, run_params["model_dir"], working_name,
+                                    run_params["train_params"]["verbosity"], run_params["train_params"]["callbacks"])
+                ### LOAD MODEL
+                working_model.load()
+                ### COMPUTE METRICS
+                computed_metrics[action].append(mlt.compute_metrics(working_model, wranglers[action_modes[0]], 
+                                                      run_params["train_params"]["metrics_params"], make_plts=True))
+                computed_metrics[action][-1]["time"] =  time.process_time() - action_start_time
+
+            del wranglers[action_modes[0]].h5_data
+
+        if action == "test":
+            computed_metrics[action] = []
+            print("TESTING")
+            for i in range(len(action_modes)):
+                wranglers[action_modes[i]].set_sample_weights(sw)
+            ### INITIALIZE MODEL
+            working_model = get_model(run_params["model_type"])
+            working_name = run_params["model_name"] + "_" + str(0)
+            working_model.setup(model_params["hyperparams"], metadata, run_params["model_dir"], working_name,
+                                    run_params["train_params"]["verbosity"], run_params["train_params"]["callbacks"])
+            ### LOAD MODEL
             working_model.load()
-            if train_params["verbosity"] != 0:
-                print("loaded model")
+            ### COMPUTE METRICS
+            computed_metrics[action].append(mlt.compute_metrics(working_model, wranglers[action_modes[0]], 
+                                                    run_params["train_params"]["metrics_params"], make_plts=True))
+            computed_metrics[action][-1]["time"] =  time.process_time() - action_start_time
 
-        if train_params["mode"] == "loadtrain" or train_params["mode"] == "train":
-            print("training model for", train_params["n_epochs_default"], "epochs")
-            working_model.fit(train_wrangler, val_wrangler, train_params["n_epochs_default"],
-                              train_params["workers"], train_params["multip"])
-            if train_params["verbosity"] != 0:
-                print("done fitting model")
-            if train_params["save_model"]:
-                working_model.save()
-        if train_params["compute_metrics"]:
-            computed_metrics.append(mlt.compute_metrics(working_model, val_wrangler, train_params["metrics_params"], make_plts=True))
-            if train_params["verbosity"] != 0:
-                print("computed metrics")
-       #print(working_model.callbacks[0].logs["loss"])
-    time_delta = time.process_time() - setup_start_time
+            del wranglers[action_modes[0]].h5_data
+
+    ### compile metrics for this action
     print("reformatting metrics...")
-    ref_metrics = mlt.reformat_metrics(computed_metrics, train_params["metrics_params"], model_params["hyperparams"]["y_layers"])
-    ref_metrics["metafolds"] = train_params["run_on_folds"]
-    ref_metrics["total_time"] = time_delta
-    mlt.save_metrics(ref_metrics, working_model.modeldir, train_params["mode"])
+    ref_metrics = mlt.reformat_2(actions, computed_metrics, run_params["train_params"]["metrics_params"], metadata["y_layers"])
+    ref_metrics["metafolds"] = run_params["train_params"]["run_on_folds"]
+    mlt.save_metrics(ref_metrics, run_params["model_dir"])
+
+    

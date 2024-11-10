@@ -436,9 +436,11 @@ if sys.argv[1] == "make_mlframe_config":
     print("writing default ci alignment config to", mlframe_loc)
 
     mlframe_dict = {"core": {"verbosity": 2,
-                             "model_dicts_locs": ["../models/configs/c2_late_a.json",
-                                                  "../models/configs/multi_vit.json"],
-                             "override_existing_dir": False},
+                             "models": [["configs/c2_late_a.json", ["train", "val", "test"]],
+                                        ["configs/multi_vit.json", ["train", "val", "test"]]],
+                             "override_existing_dir": False, 
+                             "remove_ids": [14], 
+                             "override_epochs": 20},
                     }
 
     make_config(mlframe_dict, mlframe_loc)
@@ -455,10 +457,16 @@ if sys.argv[1] == "make_model_config":
     print("writing default ci alignment config to", modelconf_loc)
 
     ## cascade_late (1)
-    mlframe_dict = {"run_params": {"data_root_dir": "../data/ml_sets/pyramid_lf22/",
+    mlframe_dict = {"run_params": {"model_type": "c2_late_a", ### f2 (baseline) c2_early c2_mid c2_late_a c2_late_b
+                                   "model_dir": "trained/" + model_type + "_pyramid",
+                                   "model_name": "cascade_late_a_8_10_8",
+                                   "data_root_dir": "../data/ml_sets/pyramid_lf22/",
                                    "data_low_mem": False, ## set to false for faster but more memory
                                    "make_vis": None,
-                                   "train_params":  {"mode": "train", ### {load, loadtrain, train}
+                                   "train_params":  {"mode": {"train": ["train", "val"],    # [{train, combine}, {val, test}]
+                                                              "resume": ["train", "val"],   # [{train, combine}, {val, test}]
+                                                              "val": ["val"],               # [{val, test}]
+                                                              "test": ["test"]},            # [{test}]
                                                      "batch_size": 1000,
                                                      "run_on_folds": [0],
                                                      "n_epochs_default": 1,
@@ -472,11 +480,9 @@ if sys.argv[1] == "make_model_config":
                                                     },
                                    },
 
-                    "model_params": {"model_type": "c2_late_a", ### f2 (baseline) c2_early c2_mid c2_late_a c2_late_b
-                                     "model_dir": "trained/" + model_type + "_pyramid",
-                                     "model_name": "cascade_late_a_8_10_8",
-                                     "hyperparams": {"dense_layers": [800, 1000, 800],
+                    "model_params": {"hyperparams": {"dense_layers": [800, 1000, 800],
                                                      "learning_rate": 0.0005,
+                                                     "sw_bins": 200,
                                                      "single_task": None,
                                                      "monitor_loss": True,
                                                      "training_loss": "mse",

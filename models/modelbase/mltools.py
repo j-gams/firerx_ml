@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pickle
 from scipy import stats
+import os
 
 def bin_freq_plt(make_vis, n_bins, valuefreq, i, plt_title, yax_title):
     if make_vis:
@@ -30,77 +31,103 @@ def bin_weight_plt(make_vis, n_bins, valuefreqs, i, plt_title, yax_title):
         plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
         plt.clf()
 
+def load_metadata(data_root_dir):
+    ### load dataset metadata from file
+    with open(data_root_dir + "info.txt", 'r') as infofile:
+        metadata_total = infofile.read().replace('\n', ';')
+    metadata_lines = metadata_total.split(";")
+    metadata_raw = []
+    for metal in metadata_lines:
+        if len(metal) > 0:
+            metadata_raw.append(metal.split(","))
+
+    other_info = metadata_raw.pop(0)
+    metadata = {"metadata": metadata_raw,
+                 "n_folds": other_info[0],
+                 "buffer_nodata": other_info[1],
+                 "base_crs": other_info[2],
+                 "n_layers": len(metadata_raw),
+                 "layer_dims": [],
+                 "x_layers": [],
+                 "y_layers": [],
+                 "layer_names": []}
+    
+    for j in range(metadata["n_layers"]):
+        metadata["layer_dims"].append(int(metadata_raw[j][0]))
+        metadata["layer_names"].append(metadata_raw[j][3])
+        if metadata_raw[j][1] == "x":
+            metadata["x_layers"].append(j)
+        else:
+            metadata["y_layers"].append(j)
+    print("metadata check")
+    for elt in metadata_raw:
+        print(elt)
+
+    return metadata
+
+
 def compile_sample_weights(method, func_mode, wr_mode, wrangler, n_bins, n_folds, save_to, make_vis=False, set_weights=True):
+    ### first -- if wrangler isn't set to have sample weights, return none
+    if wrangler.use_sample_weights == False:
+        return None
+    if func_mode != "load_from_file":
+        ### create directory to save weights to
+        os.system("mkdir " + save_to + "sample_weights")
     ### TODO -- moved this to be sample weights for all folds computed/in memory at all times
     ### wrangler needs to be set up beforehand...
-    sample_weights = [[[] for ii in range(len(wrangler.use_y_ids))] for jj in range(n_folds)]
-    ### if we have already computed sample weights, we can load from a file
-    if func_mode == "load_from_file":
-        if wr_mode == "train":
-            print("loading sample weights from", save_to)
-            for j in range(len(n_folds)):
-                for i in range(len(sample_weights)):
-                    ### load weights at fold j, y variable i
-                    sample_weights[j][i] = np.load(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv")
-            if set_weights:
-                wrangler.sample_weights = [[np.array(sample_weights[jj][ii]) for ii in wrangler.use_y_ids] for jj in range(n_folds)]
-                for i in range(len(wrangler.use_y_ids)):
-                    wrangler.sample_weights[i] = np.array(wrangler.sample_weights[i])
-            return sample_weights
-        elif wr_mode == "combine":
-            pass
-    ### otherwise we need to compute the sample weights
-    else:
-        if wr_mode == "train":
-            ### visualization parameters
-            valuefreqs = []
+    ### n_folds should be 1 if wr_mode == "combine"
+    if wr_mode == "combine":
+        n_folds = 1
+    sample_weights = [[[] for ii in range(len(wrangler.use_y_ids))] for jj in range(len(n_folds))]
+    valuefreqs = []
+    ### iterate over folds, then over y layers
+    for j in range(len(n_folds)):
+        wrangler.set_fold(j)
+        if func_mode != "load_from_file":
+            ### this is correct np data down to mode, fold, etc
+            ### get_h5_data can work with or without preloading data
+            wrangler_layer_data = [wrangler.get_h5_data(ii) for ii in wrangler.use_y_ids]
+        for i in range(len(wrangler.use_y_ids)):
+            if func_mode == "load_from_file":
+                sample_weights[j][i] = np.genfromtxt(save_to + "sample_weights/" + wr_mode + "_f" + str(j) + "_y" + str(i) + ".csv", delimiter = ',')
+            else:
+                ### compute weights with chosen method
+                valuefreq = np.histogram(wrangler.apply_norm(wrangler_layer_data[i], wrangler.use_y_ids[i]), bins=n_bins, range=[0, 1])[0]
+                if method == "bin_log":
+                    valuefreq = np.log(valuefreq)
+                    ### make plot of bin frequencies (if we are making plots)
+                    bin_freq_plt(make_vis,n_bins, valuefreq, i, " Log Normalized Pixel Value Frequency (" + str(n_bins) + " bins)", "Log Bin Frequency")
+                    ### iterate over bins and compute bin weights
+                    for k in range(n_bins):
+                        ### need to do this for divide by 0...? they dont show up in this set so weight doesn't matter
+                        if valuefreq[k] == 0:
+                            valuefreq[k] = 1
+                        else:
+                            valuefreq[k] = (wrangler_layer_data[i].shape[1]**2)/valuefreq[k]
+                    ### normalize - scale bin weights to <= 1
+                    temp_max = np.max(valuefreq)
+                    for k in range(n_bins):
+                        valuefreq[k] /= temp_max
+                    valuefreqs.append(np.array(valuefreq))
+                    ### make plot of bin weights (if we are making plots)
+                    bin_weight_plt(make_vis, n_bins, valuefreqs, i, " Pixel Value Bin Weights (" + str(n_bins) + " bins)", "Pixel Value Bin Weight")
+                if method == "bin_frq":
+                    pass
+            
+        ### values for each class of sample... now map samples to values
+        print("halfway (" + str(j) + ")...", end="", flush=True)
+        if func_mode != "load_from_file":
+            for i in range(len(wrangler.use_y_ids)):
+                for k in range(len(wrangler_layer_data[i])):
+                    ### attrocious line below computes sample weights by summing over sample pixel bin weights
+                    sample_weights[j][i].append(np.sum(valuefreqs[i][np.clip((wrangler.apply_norm(wrangler_layer_data[i][k], wrangler.use_y_ids[i]) * n_bins), None, n_bins-1).astype(int)]))
+                sample_weights[j][i] = np.array(sample_weights[j][i])
+                np.savetxt(save_to + "sample_weights/" + wr_mode + "_f" + str(j) + "_y" + str(i) + ".csv", sample_weights[j][i], delimiter=',') 
 
-            ### compute weights over all folds
-            for j in range(len(n_folds)):
-                wrangler.set_fold(j)
-                for i in range(len(wrangler.use_y_ids)):
-                    ### compute weights with chosen method
-                    ### this line is probably requiring that wrangler is setup in not lo-mem mode (preloaded data)
-                    valuefreq = np.histogram(wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]][wrangler.train_ids[j]], wrangler.use_y_ids[i]), bins=n_bins, range=[0, 1])[0]
-                    if method == "bin_log":
-                        valuefreq = np.log(valuefreq)
-                        bin_freq_plt(make_vis,n_bins, valuefreq, i, " Log Normalized Pixel Value Frequency (" + str(n_bins) + " bins)", "Log Bin Frequency")
-                        ### iterate over bins and compute bin weights
-                        for k in range(n_bins):
-                            if valuefreq[k] == 0:
-                                valuefreq[k] = 1
-                            else:
-                                valuefreq[k] = (wrangler.h5_data[wrangler.use_y_ids[i]].shape[1]**2)/valuefreq[k]
-                        ### normalize - scale bin weights to <= 1
-                        temp_max = np.max(valuefreq)
-                        for k in range(n_bins):
-                            valuefreq[k] /= temp_max
-                        valuefreqs.append(np.array(valuefreq))
-                        bin_weight_plt(make_vis, n_bins, valuefreqs, i, " Pixel Value Bin Weights (" + str(n_bins) + " bins)", "Pixel Value Bin Weight")
-                    if method == "bin_frq":
-                        pass
-
-                ### values for each class of sample... now map samples to values
-                print("halfway (" + str(j) + ")...", end="", flush=True)
-                for i in range(len(wrangler.use_y_ids)):
-                    for k in range(len(wrangler.h5_data[wrangler.use_y_ids[i]][wrangler.train_ids[j]])):
-                        ### attrocious line below computes sample weights by summing over sample pixel bin weights
-                        sample_weights[j][i].append(np.sum(valuefreqs[i][np.clip((wrangler.apply_norm(wrangler.h5_data[wrangler.use_y_ids[i]][k], wrangler.use_y_ids[i]) * n_bins), None, n_bins-1).astype(int)]))
-
-            print("done")
-            if set_weights:
-                wrangler.sample_weights = [[np.array(sample_weights[jj][ii]) for ii in wrangler.use_y_ids] for jj in range(n_folds)]
-                for i in range(len(wrangler.use_y_ids)):
-                    wrangler.sample_weights[i] = np.array(wrangler.sample_weights[i])
-
-            ### save data... 
-            print("saving sample weights to", save_to)
-            for j in range(len(n_folds)):
-                for i in range(len(sample_weights)):
-                    np.save(save_to + "sample_weights_f" + str(j) + "_y" + str(i) + ".csv", sample_weights[i])
-            return sample_weights
-        elif wr_mode == "combine":
-            pass
+    print("done")
+    if set_weights:
+        wrangler.sample_weights = sample_weights
+    return sample_weights
 
 class lossCallback(tf.keras.callbacks.Callback):
     def __init__ (self):
@@ -323,6 +350,34 @@ def compute_metrics(working_model, val_wrangler, metrics_params, make_plts=False
     metric_layer["r2"] = metric_r2(y_predicted, y_actual, "geo", make_plts, working_model.name)
     return metric_layer
 
+def reformat_2(actions, in_metrics, metrics_params, y_layers):
+    ### come in as [action][fold, metric_type, granularity, ylayer]
+    ### prefer... [action][metric_type+granularity, ylayer, fold]
+    ref_metrics = {}
+    for action in actions:
+        ref_metrics[action] = {}
+        if action == "val" or action == "test":
+            ### copy over mse, mae 
+            for mtype in ["mse", "mae"]:
+                ### iterate over granularity
+                for k in range(len(metrics_params)):
+                    gtype = metrics_params[k]
+                    ref_metrics[action][mtype + "_" + gtype] = []
+                    ### iterate over y layers
+                    for i in range(len(y_layers)):
+                        ref_metrics[action][mtype + "_" + gtype].append([])
+                        ### iterate over folds?
+                        for j in range(len(in_metrics[action])):
+                            ref_metrics[action][mtype + "_" + gtype][i].append(in_metrics[action][j][mtype][k][i])
+            ref_metrics[action]["r2"] = []
+            for i in range(len(y_layers)):
+                ref_metrics[action]["r2"].append([])
+                for j in range(len(in_metrics[action])):
+                    ref_metrics[action]["r2"][i].append(in_metrics[action][j]["r2"][i])
+        ref_metrics[action]["time"] = []
+        for j in range(len(in_metrics[action])):
+            ref_metrics[action]["time"].append(in_metrics[action][j]["time"])
+    return ref_metrics
 
 def reformat_metrics(in_metrics, metrics_params, y_layers):
     ### come in as [fold, metric_type, granularity, ylayer]
@@ -345,8 +400,8 @@ def reformat_metrics(in_metrics, metrics_params, y_layers):
 
     return ref_metrics
 
-def save_metrics(computed_metrics, wmdir, model_mode):
-    with open(wmdir + "/metrics" + model_mode + ".txt", "wb") as metric_out:
+def save_metrics(computed_metrics, wmdir):
+    with open(wmdir + "/metrics.txt", "wb") as metric_out:
         pickle.dump(computed_metrics, metric_out)
 
 def process_dims(layer_dims, x_ids, y_ids):

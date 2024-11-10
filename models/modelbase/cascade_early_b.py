@@ -9,7 +9,8 @@ class model_cascade2_early_b:
     def __init__(self):
         self.base_model = None
 
-    def make_base_model(self, layer_dims, y_break, unique_dims_sorted, frequency, y_unique, y_frequency, model_params):
+    def make_base_model(self, layer_dims, y_break, unique_dims_sorted, frequency, y_unique, y_frequency, model_params,
+                        meta_layernames):
         xdims = layer_dims[:y_break]
         ydims = layer_dims[y_break:]
         inputs = []
@@ -110,7 +111,7 @@ class model_cascade2_early_b:
 
         ### step 13 -- output block
         ### input_layer, y_dims, y_unique, y_frequency, y_names, block_version, single_task
-        y_split_out = mlt.y_block(fc, ydims, y_unique, y_frequency, model_params["layer_names"][y_break:],
+        y_split_out = mlt.y_block(fc, ydims, y_unique, y_frequency, meta_layernames[y_break:],
                                   model_params["output_block"], model_params["single_task"])
 
         if self.v != 0:
@@ -118,13 +119,13 @@ class model_cascade2_early_b:
         return tf.keras.models.Model(inputs=inputs, outputs=y_split_out)
 
 
-    def setup(self, model_params, model_dir, model_name, verbosity, cb_params):
+    def setup(self, model_params, metadata, model_dir, model_name, verbosity, cb_params):
         self.v = verbosity
-        self.layer_dims = model_params["layer_dims"]
+        self.layer_dims = metadata["layer_dims"]
         self.name = model_name
         self.modeldir = model_dir
-        self.x_ids = model_params["x_layers"]
-        self.y_ids = model_params["y_layers"]
+        self.x_ids = metadata["x_layers"]
+        self.y_ids = metadata["y_layers"]
         self.training_loss = model_params["training_loss"]
         self.monitor_loss = model_params["monitor_loss"]
         self.singletask = model_params["single_task"]
@@ -133,7 +134,7 @@ class model_cascade2_early_b:
         unique_layer_dims, y_unique, unique_freq, y_freq = mlt.process_dims(self.layer_dims, self.x_ids, self.y_ids)
 
         self.base_model = self.make_base_model(self.layer_dims, len(self.x_ids), unique_layer_dims,
-                                               unique_freq, y_unique, y_freq, model_params)
+                                               unique_freq, y_unique, y_freq, model_params, metadata["layer_names"])
         opt = tf.keras.optimizers.Adam(learning_rate=model_params["learning_rate"])
         #self.base_model.compile(loss=self.training_loss, optimizer=opt)
         self.base_model.compile(loss={'ECOSTRESSWUE':  tf.keras.losses.MeanSquaredError(), 

@@ -7,7 +7,7 @@ import keras.utils as kr_utils
 import matplotlib.pyplot as plt
 
 class data_wrangler (kr_utils.Sequence):
-    def __init__ (self, rootdir, n_layers, n_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, sample_weights, low_mem=True, **kwargs):
+    def __init__ (self, rootdir, n_layers, on_folds, cube_dims, batch_size, buffer_nodata, x_ids, y_ids, sample_weights, low_mem=True, **kwargs):
         ### handle basic parameters
         self.n_layers = n_layers
         self.buffer_nodata = buffer_nodata
@@ -19,7 +19,7 @@ class data_wrangler (kr_utils.Sequence):
         ### possible modes -- {train, val, combine, test}
         self.mode = "train"
         self.train_fold = 0
-        self.n_folds = n_folds
+        self.on_folds = on_folds
         self.use_sample_weights = sample_weights
         self.sample_weights = []
         self.low_memory = low_mem
@@ -33,32 +33,35 @@ class data_wrangler (kr_utils.Sequence):
             self.layer_locs.append(rootdir + "/layer_"+str(i)+".h5")
             self.h5_src.append(h5py.File(self.layer_locs[i], 'r'))
             self.h5_data.append(self.h5_src[i]["data"])
-        ### if not low_memory mode load all the layers into memory 
-        if not self.low_memory:
-            for i in range(n_layers):
-                self.h5_data[i] = np.array(self.h5_data[i])
 
         ### load index data
         self.test_index = np.genfromtxt(rootdir + "/test.csv", delimiter=',')
         self.combined_index = np.genfromtxt(rootdir + "/remaining.csv", delimiter=',')
+        self.src_test = np.array(self.test_index)
+        self.src_comb = np.array(self.combined_index)
         self.train_ids = []
+        self.src_trn = []
         self.val_ids = []
-        for i in range(n_folds):
-            self.train_ids.append(np.genfromtxt(rootdir+"/train_"+str(i)+".csv", delimiter=','))
-            self.val_ids.append(np.genfromtxt(rootdir+"/val_"+str(i)+".csv", delimiter=','))
+        self.src_val = []
+        for f in on_folds:
+            self.train_ids.append(np.genfromtxt(rootdir+"/train_"+str(f)+".csv", delimiter=','))
+            self.val_ids.append(np.genfromtxt(rootdir+"/val_"+str(f)+".csv", delimiter=','))
+            self.src_trn.append(self.train_ids[-1])
+            self.src_val.append(self.val_ids[-1])
 
         ### load normalization data
         self.combined_min = np.genfromtxt(rootdir + "/norm_layer_mins_combined.csv", delimiter=',')
         self.combined_max = np.genfromtxt(rootdir + "/norm_layer_maxs_combined.csv", delimiter=',')
         self.fold_mins = []
         self.fold_maxs = []
-        for i in range(self.n_folds):
-            self.fold_mins.append(np.genfromtxt(rootdir + "/norm_layer_mins_fold_"+str(i)+".csv", delimiter=','))
-            self.fold_maxs.append(np.genfromtxt(rootdir + "/norm_layer_maxs_fold_"+str(i)+".csv", delimiter=','))
+        for f in self.on_folds:
+            self.fold_mins.append(np.genfromtxt(rootdir + "/norm_layer_mins_fold_"+str(f)+".csv", delimiter=','))
+            self.fold_maxs.append(np.genfromtxt(rootdir + "/norm_layer_maxs_fold_"+str(f)+".csv", delimiter=','))
 
-        self.set_mode("train")
+        self.setup("train", loading=False)
 
-    def set_mode(self, mode):
+    def setup(self, mode, loading=True):
+        ### set mode and deal with indices...
         self.mode = mode
         self.index_len = 0
         if self.mode == "train":
@@ -72,8 +75,20 @@ class data_wrangler (kr_utils.Sequence):
         self.lenn = int(np.ceil(self.index_len / self.batch_size))
         self.shuffle()
 
+        ### if not low_memory mode load all the layers into memory 
+
+        if loading and not self.low_memory:
+            for i in range(self.n_layers):
+                self.h5_data[i] = np.array(self.h5_data[i])
+
+    def iter_fold(self):
+        self.train_fold = (self.train_fold + 1) % len(self.on_folds)
+
     def set_fold(self, fold):
-        self.train_fold = fold
+        if self.mode == "train":
+            self.train_fold = fold
+        else:
+            self.train_fold = 0
 
     def exclude_ids(self, exclude):
         self.cache_x_ids = list(self.x_ids)
@@ -85,68 +100,40 @@ class data_wrangler (kr_utils.Sequence):
         self.x_ids = self.cache_x_ids
 
     def get_h5_data(self, layerid):
-        ### we do not have the data loaded
-        if self.low_memory:
-            return np.array(self.h5_src[layerid]["data"])
-        ### we have the data loaded already
-        else:
-            return self.h5_data[layerid]
-
-    """def load_sample_weights(self, loc, nbins):
-        pass
-
-    def compute_sample_weight(self, mode, nbins, vis=False):
-        self.sample_weights = [[] for ii in range(len(self.use_y_ids))]
-        valuefreqs = []
-        target_names = ["WUE", "ESI", "AGB"]
-        colors = ["salmon", "lightgreen", "lightblue"]
-        if mode == "real_bininv":
-            print("computing sample weights (real_bininv)...", end="", flush=True)
-            ### iterate over y layers and for each, bin and come up with thresholds
-            for i in range(len(self.use_y_ids)):
-                valuefreq = np.log(np.histogram(self.apply_norm(self.h5_data[self.use_y_ids[i]], self.use_y_ids[i]), bins=nbins, range=[0, 1])[0])
-                #print(valuefreq.shape)
-                if vis:
-                    plt.bar(np.arange(nbins)/nbins, valuefreq, width=1/nbins, color=colors[i])
-                    plt.title(target_names[i] + " Log Normalized Pixel Value Frequency (" + str(nbins) + " bins)")
-                    plt.xlabel("Normalized Value")
-                    plt.ylabel("Log Bin Frequency")
-                    plt.savefig("../visualize/data_dist/sample_freq_plot_" + str(i) + ".png")
-                    plt.clf()
-                for j in range(nbins):
-                    if valuefreq[j] == 0:
-                        valuefreq[j] = 1
-                    else:
-                        valuefreq[j] = (self.h5_data[self.use_y_ids[i]].shape[1]**2)/valuefreq[j]
-                temp_max = np.max(valuefreq)
-                for j in range(nbins):
-                    valuefreq[j] /= temp_max
-                valuefreqs.append(np.array(valuefreq))
-                plt.bar(np.arange(nbins)/nbins, valuefreqs[i], width=1/nbins, color=colors[i])
-                plt.title(target_names[i] + " Pixel Value Bin Weights (" + str(nbins) + " bins)")
-                plt.xlabel("Normalized Value (" + str(nbins) + " bins)")
-                plt.ylabel("Pixel Value Bin Weight")
-                plt.savefig("../visualize/data_dist/sample_weight_plot_" + str(i) + ".png")
-                plt.clf()
-            ### values for each class of sample... now map samples to values
-            print("halfway...", end="", flush=True)
-            for i in range(len(self.use_y_ids)):
-                for k in range(len(self.h5_data[self.use_y_ids[i]])):
-                    ### idea 1... sum pixel weights over sample
-                    ### idea 2... know nbins and range... so multiply by nbins, convert to int to get bin number...?
-                    ### get bins, then valuefreqs at locations
-                    self.sample_weights[i].append(np.sum(valuefreqs[i][np.clip((self.apply_norm(self.h5_data[self.use_y_ids[i]][k], self.use_y_ids[i]) * nbins), None, nbins-1).astype(int)]))
-                    #self.sample_weights[i].append(valuefreqs[i][np.clip((self.apply_norm(self.h5_data[self.use_y_ids[i]][k], self.use_y_ids[i]) * nbins), None, nbins-1).astype(int)]) 
-            print("done")
-            for i in range(len(self.use_y_ids)):
-                self.sample_weights[i] = np.array(self.sample_weights[i])
-                print(self.sample_weights[i].shape)
-        if vis:
-            plt.close()"""
+        print("get h5 ", layerid)
+        if self.mode == "train":
+            ### we do not have the data loaded
+            ### need to get these wrt underlying indexing not shuffled indexing
+            if self.low_memory:
+                return np.array(self.h5_src[layerid]["data"])[self.src_trn[self.train_fold]]
+            ### we have the data loaded already
+            #print("issueshape", self.h5_data[layerid].shape, type(self.train_ids[self.train_fold]))
+            return self.h5_data[layerid][self.src_trn[self.train_fold].astype(int)]
+        elif self.mode == "combine":
+            ### we do not have the data loaded
+            if self.low_memory:
+                return np.array(self.h5_src[layerid]["data"])[self.src_comb]
+            ### we have the data loaded already
+            return self.h5_data[layerid][self.src_comb_.astype(int)]
 
     def set_sample_weights(self, sample_weights):
         print("confirming set sample weights")
-        self.sample_weights = sample_weights
+        if self.use_sample_weights:
+            self.sample_weights = sample_weights
+            ### need to iterate through and move array to reflect indexing
+            ### shape of [fold][y][sample]
+            for j in range(len(sample_weights)):
+                for i in range(len(self.use_y_ids)):
+                    t_sw = np.ones(len(self.h5_data[self.use_y_ids[i]]))
+                    if self.mode == "train":
+                        t_sw[self.src_trn[self.train_fold].astype(int)] = sample_weights[j][i]
+                    elif self.mode == "val":
+                        t_sw[self.src_trn[self.train_fold].astype(int)] = sample_weights[j][i]
+                    elif self.mode == "combine":
+                        t_sw[self.src_comb[self.train_fold].astype(int)] = sample_weights[j][i]
+                    elif self.mode == "test":
+                        t_sw[self.src_testl[self.train_fold].astype(int)] = sample_weights[j][i]
+                    self.sample_weights[j][i] = t_sw
 
     def shuffle(self):
         if self.mode == "train":
@@ -168,6 +155,20 @@ class data_wrangler (kr_utils.Sequence):
             return self.combined_index[idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
         elif self.mode == "test":
             return self.test_index[idx*self.batch_size: min(((idx+1) * self.batch_size), self.index_len)]
+        
+    def getsw(self, idx):
+        ret_sw = []
+        for j in range(len(self.use_y_ids)):
+            if self.mode == "train":
+                ret_sw.append(self.sample_weights[self.train_fold][j][idx].reshape((len(idx), -1)))
+            elif self.mode == "val":
+                ret_sw.append(self.sample_weights[self.train_fold][j][idx].reshape((len(idx), -1)))
+            elif self.mode == "combine":
+                ret_sw.append(self.sample_weights[0][j][idx].reshape((len(idx), -1)))
+            elif self.mode == "test":
+                ret_sw.append(self.sample_weights[0][j][idx].reshape((len(idx), -1)))
+
+        return ret_sw
 
     def __len__ (self):
         return self.lenn
@@ -203,10 +204,9 @@ class data_wrangler (kr_utils.Sequence):
             ret_y[j][:,:] = self.apply_norm(np.array(self.h5_data[self.use_y_ids[j]][ret_indices, :, :]), self.use_y_ids[j]).reshape((len(ret_indices), -1))
             #ret_y.append(self.apply_norm(np.array(self.h5_data[self.use_y_ids[j]][ret_indices, :, :]), self.use_y_ids[j]).flatten())
         if self.use_sample_weights:
-            ret_sw = []
-            for j in range(len(self.use_y_ids)):
-                ret_sw.append(self.sample_weights[j][ret_indices].reshape((len(ret_indices), -1)))
-            #print(self.mode, ret_y[0].shape, ret_sw[0].shape, "*", ret_y[1].shape, ret_sw[1].shape, "*", ret_y[2].shape, ret_sw[2].shape)
+            #ret_sw = [self.sample_weights[self.train_fold][jj][ret_indices] for jj in range(len(self.use_y_ids))]
+            ret_sw = self.getsw(ret_indices)
+            
             return tuple(ret_x), tuple(ret_y), tuple(ret_sw)
         return tuple(ret_x), tuple(ret_y)
 
