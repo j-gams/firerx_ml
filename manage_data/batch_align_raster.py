@@ -390,9 +390,10 @@ if __name__ == "__main__":
                     result_arr = align.slice_batch(map_params[0])
 
                 reconstructed_result = []
-                for arr_i in result_arr:
-                    reconstructed_result.extend(arr_i)
-                    del arr_i
+                if multiprocessing_mode:
+                    for arr_i in result_arr:
+                        reconstructed_result.extend(arr_i)
+                        del arr_i
 
                 ### create geotif
                 layer_geotif = np.array(reconstructed_result)
