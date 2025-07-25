@@ -387,7 +387,7 @@ if __name__ == "__main__":
                     with Pool(None) as mpool:
                         result_arr = mpool.map(align.slice_batch, map_params)
                 else:
-                    result_arr = align.slice_batch(map_params)
+                    result_arr = align.slice_batch(map_params[0])
 
                 reconstructed_result = []
                 for arr_i in result_arr:
