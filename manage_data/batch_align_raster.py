@@ -394,6 +394,11 @@ if __name__ == "__main__":
                     for arr_i in result_arr:
                         reconstructed_result.extend(arr_i)
                         del arr_i
+                else:
+                    for arr_i in result_arr:
+                        reconstructed_result.append(arr_i)
+                        del arr_i
+
 
                 ### create geotif
                 layer_geotif = np.array(reconstructed_result)
