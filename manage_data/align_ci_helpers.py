@@ -19,6 +19,9 @@ def slice_batch(batch_params):
     band_list, layer_arr, resample_params = batch_params
     result = []
     slice_oob_check = 0
+    if len(band_list) == 0:
+        print("--> skipping 0-length strip")
+        return []
     for band in band_list:
         if band_list[0] == 0 and (band + 1) % (len(band_list) // 50) == 0:
             print("-", end="", flush=True)

@@ -81,6 +81,8 @@ if __name__ == "__main__":
     ### same --
     skip_alignment = config["skip"]["alignment"]
     ### same --
+    ### which subdiv to start from
+    sub_init = int(config["skip"]["subdiv_initfrom"])
 
     ### same --
     guiding_layer_idx = config["data"]["guiding_layer_idx"]
@@ -98,6 +100,7 @@ if __name__ == "__main__":
     print("  - skipping vector reproj:", skip_extent_reproj)
     print("  - skipping layer resolution check:", skip_extent_reproj)
     print("  - skipping layer alignment:", skip_alignment)
+    print("  - set initial subdivision index to:", sub_init)
     print("  - running in multiprocessing mode:", multiprocessing_mode)
     print("  - resampling with ", resampling_mode)
 
@@ -195,7 +198,7 @@ if __name__ == "__main__":
 
     ### NOW POST-SUBDIV...
     ### now... need to iterate over subregions
-    for subregion_idx in range(len(subregions)):
+    for subregion_idx in range(sub_init, len(subregions)):
         sub_i, sub_j = subregions[subregion_idx]
 
         ### open subregion extent
@@ -395,9 +398,7 @@ if __name__ == "__main__":
                         reconstructed_result.extend(arr_i)
                         del arr_i
                 else:
-                    for arr_i in result_arr:
-                        reconstructed_result.append(arr_i)
-                        del arr_i
+                    reconstructed_result = result_arr
 
 
                 ### create geotif
