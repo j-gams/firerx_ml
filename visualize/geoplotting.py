@@ -81,13 +81,22 @@ def geo_to_idx_vec(geo_list, geopack, usetype=float):
 xkeys = ["lf_cc", "lf_evc", "standage"]
 ykeys = ["yhat_wue", "yhat_esi", "yhat_agb"]
 corekey = "lf_evt"
+### get list of positions where core value is not ndv
 corenum = np.argwhere(ad2[corekey]["data"] != ad2[corekey]["ndv"])
+### sampling resolution calculation
 standard_res = 30
 sampling_res = 10
 sr_sr = standard_res/sampling_res
 comps = []
 
+### comp is output
+### format of comp is
+### [temp[],
+###  ...]
+
+### what is this... make array of sampling_res/standard res ratio...
 usesss = np.array(np.array([[sampling_res/standard_res, sampling_res/standard_res]]))
+### compute range...
 comp_range = np.arange(int(sr_sr)).reshape(int(sr_sr), 1)
 comp_offset =  comp_range*usesss
 
