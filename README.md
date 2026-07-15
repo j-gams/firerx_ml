@@ -1,4 +1,7 @@
 ## Overview of FireRX ML
+
+[![DOI: 10.5281/zenodo.21385388](https://zenodo.org)](https://doi.org)
+
 ### Paper and Citation information
 This repository contains code and experiments from our paper, "Data Pyramids: A Lightweight, Multisource Paradigm for Large-Scale Deep Learning Analysis of Ecosystem Functioning and Services" (in review). 
 
