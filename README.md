@@ -1,6 +1,20 @@
 ## Overview of FireRX ML
-### Paper and DOI
-DOI: https://doi.org/10.5281/zenodo.21385388
+### Paper and Citation information
+This repository contains code and experiments from our paper, "Data Pyramids: A Lightweight, Multisource Paradigm for Large-Scale Deep Learning Analysis of Ecosystem Functioning and Services" (in review). 
+
+Here, you will find the data pyramids extraction and preprocessing pipeline, data pyramid-based CNN and ViT models, as well as our our experimental pipeline and evaluation methods.
+
+Please cite:
+```
+@software{firerx_ml,
+  author  = {Jerome Gammie et al.},
+  title   = {firerx_ml: Framework for Machine Learning with Data Pyramids},
+  year    = {2026},
+  url     = {https://github.com/j-gams/firerx_ml},
+  version = {v1.0.0},
+  doi = {https://doi.org/10.5281/zenodo.21385388}
+}
+```
 
 #### manage_data
 This directory contains tools for manageing data, particularly for cleaning raw raster data, aligning raster data for use in causal inference, and extracting analysis-ready datasets suitable for machine learning from raw raster data (both data cubes and data pyramids). 
