@@ -26,7 +26,7 @@ This directory contains tools for managing data, particularly for cleaning raw r
 This directory contains a framework for running machine learning models and collecting performance data, plus baseline models and novel pyramid-ready CNN and ViT models. It also includes the ML dataset management framework.
 
 #### utils
-This directory contains primarily tools for generating config files (used to set parameters when aligning data, building datasets, or training ML models
+This directory contains primarily tools for generating config files (used to set parameters when aligning data, building datasets, or training ML models.
 
 ### Funding information
 National Aeronautics and Space Administration (NASA) grant #80NSSC23K0397 and the National Science Foundation (NSF) grant #2153040. 
