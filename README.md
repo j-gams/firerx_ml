@@ -3,7 +3,7 @@
 [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.21385388.svg)](http://dx.doi.org/10.5281/zenodo.21385388)
 
 ### Paper and Citation information
-This repository contains code and experiments from our paper: Gammie, J.; Verleye, E.; Illangakoon, N.; LoPresti, A.; Dee, L.; Monteleoni, C.; Stravos, N.; Amaral, C. "Data Pyramids: A Lightweight, Multisource Paradigm for Large-Scale Deep Learning Analysis of Ecosystem Functioning and Services" (in review). 
+This repository contains code and experiments from the paper: Gammie, J.; Verleye, E.; Illangakoon, N.; LoPresti, A.; Dee, L.; Monteleoni, C.; Stravos, N.; Amaral, C. "Data Pyramids: A Lightweight, Multisource Paradigm for Large-Scale Deep Learning Analysis of Ecosystem Functioning and Services" (in review). 
 
 Here, you will find the data pyramids extraction and preprocessing pipeline, data pyramid-based CNN and ViT models, as well as our experimental pipeline and evaluation methods.
 
